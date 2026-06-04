@@ -4,6 +4,21 @@
   "private": true,
   "description": "Open-source control plane for Unity and Meta XR agents using MCP and an observe-act-verify loop.",
   "type": "module",
+  "keywords": [
+    "unity",
+    "mcp",
+    "ai-agents",
+    "meta-xr",
+    "observe-act-verify"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marcosotomac/unity-ai.git"
+  },
+  "bugs": {
+    "url": "https://github.com/marcosotomac/unity-ai/issues"
+  },
+  "homepage": "https://github.com/marcosotomac/unity-ai#readme",
   "workspaces": [
     "packages/core-protocol",
     "packages/capability-sdk",
@@ -19,6 +34,7 @@
     "node": ">=20"
   },
   "devDependencies": {
+    "@types/node": "^20.19.41",
     "typescript": "^5.6.0"
   }
 }

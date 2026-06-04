@@ -2,9 +2,15 @@
   "name": "@unity-ai/capability-sdk",
   "version": "0.1.0",
   "private": true,
+  "description": "SDK helpers for defining Unity AI Control Plane capabilities and adapters.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marcosotomac/unity-ai.git",
+    "directory": "packages/capability-sdk"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"

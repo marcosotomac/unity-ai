@@ -1,5 +1,7 @@
 # Unity AI Control Plane
 
+[![CI](https://github.com/marcosotomac/unity-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/marcosotomac/unity-ai/actions/workflows/ci.yml)
+
 Open-source control plane for Unity and Meta XR projects where AI agents can observe project state, act through controlled Unity operations, and verify the result with logs, tests, builds, and visual feedback.
 
 > Working thesis: AI should not only generate code for Unity. It should operate on real projects with a closed loop: **observe → act → verify**.
@@ -129,3 +131,22 @@ Success criteria:
 - The agent can apply at least one controlled Unity-side change.
 - The agent can verify that the project improved after the change.
 - All actions are auditable and safe enough for real project usage.
+
+## Development
+
+Requirements:
+
+- Node.js 20 or newer.
+- npm.
+- Unity Editor 2022.3 or newer for Unity package verification.
+
+Useful commands:
+
+```bash
+npm ci
+npm run typecheck
+npm run build
+npm run verify:unity-package
+```
+
+`npm run verify:unity-package` expects a local Unity installation. Set `UNITY_PATH` or pass the Unity executable path as the first argument if Unity is not discoverable in the default location.
