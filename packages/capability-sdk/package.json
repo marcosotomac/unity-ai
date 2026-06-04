@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "SDK helpers for defining Unity AI Control Plane capabilities and adapters.",
+  "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

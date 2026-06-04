@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "unity": "2022.3",
   "description": "Editor plugin that lets MCP agents observe, act, and verify Unity and Meta XR projects through controlled capabilities.",
+  "license": "MIT",
+  "licensesUrl": "https://raw.githubusercontent.com/marcosotomac/unity-ai/main/LICENSE",
   "keywords": [
     "AI",
     "MCP",
