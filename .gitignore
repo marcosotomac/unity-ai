@@ -1,0 +1,49 @@
+# Node / TypeScript
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Unity
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+UserSettings/
+MemoryCaptures/
+Recordings/
+*.csproj
+*.sln
+*.user
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Unity generated metadata that should stay local for this repo scaffold
+apps/unity-plugin/Library/
+apps/unity-plugin/Temp/
+apps/unity-plugin/Obj/
+apps/unity-plugin/Logs/
+apps/unity-plugin/UserSettings/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+
+# Local env
+.env
+.env.*
+!.env.example
+
+# Generated verification artifacts
+artifacts/
+.unity-ai/
+
+# Local agent/tooling cache
+.atl/

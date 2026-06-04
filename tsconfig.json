@@ -1,0 +1,8 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core-protocol" },
+    { "path": "packages/capability-sdk" },
+    { "path": "apps/mcp-server" }
+  ]
+}

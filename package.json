@@ -1,0 +1,24 @@
+{
+  "name": "unity-ai-control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open-source control plane for Unity and Meta XR agents using MCP and an observe-act-verify loop.",
+  "type": "module",
+  "workspaces": [
+    "packages/core-protocol",
+    "packages/capability-sdk",
+    "apps/mcp-server"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "verify:unity-package": "node scripts/verify-unity-package.mjs",
+    "verify:mcp-unity-e2e": "npm run build && node scripts/verify-mcp-unity-e2e.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
