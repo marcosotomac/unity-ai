@@ -15,6 +15,17 @@ verification:
   - console_snapshot
 ```
 
+```yaml
+name: unity.console.diagnose
+description: Classify Unity Console entries and return safe diagnostic guidance.
+permissions:
+  - read_console
+effects:
+  - report_only
+verification:
+  - console_diagnostics
+```
+
 ## Contract rules
 
 - A capability must declare its permissions before execution.

@@ -25,6 +25,7 @@ Verified tools:
 - `unity.capabilities.list`
 - `unity.project.inspect`
 - `unity.console.read`
+- `unity.console.diagnose`
 - `unity.meta_xr.validate_setup`
 - `unity.vision.capture`
 - `unity.editor.create_empty_game_object`
@@ -41,7 +42,8 @@ Verified tools:
 - [x] Add confirmation gate for the first scene mutation.
 - [x] Add rollback/undo verification for the first scene mutation.
 - [x] Add request/correlation IDs to act and rollback audit events.
-- [ ] Detect a simple Unity compiler or runtime error.
+- [x] Add structured Unity Console diagnostics for compiler/runtime/import/warning categories.
+- [ ] Detect a simple Unity compiler or runtime error in a purpose-built fixture.
 - [ ] Propose a safe fix plan.
 - [ ] Apply one controlled Editor-side change.
 - [ ] Recompile and verify console state.

@@ -16,6 +16,13 @@ export const initialCapabilities: CapabilityManifest[] = [
     verification: ["console_snapshot"]
   },
   {
+    name: "unity.console.diagnose",
+    description: "Classify Unity Console entries and return safe, structured diagnostic guidance.",
+    permissions: ["read_console"],
+    effects: ["report_only"],
+    verification: ["console_diagnostics"]
+  },
+  {
     name: "unity.assets.list",
     description: "List Unity project assets with paths, GUIDs, and main asset types.",
     permissions: ["read_project", "read_assets"],

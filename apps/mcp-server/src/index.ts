@@ -51,6 +51,15 @@ server.registerTool(
 );
 
 server.registerTool(
+  "unity.console.diagnose",
+  {
+    description: "Diagnose Unity Console compiler/runtime issues as structured, read-only guidance.",
+    inputSchema: z.object({})
+  },
+  async () => bridgeTool("unity.console.diagnose")
+);
+
+server.registerTool(
   "unity.assets.list",
   {
     description: "List Unity project assets with paths, GUIDs, and main asset types.",

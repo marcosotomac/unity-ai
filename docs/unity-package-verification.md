@@ -41,6 +41,7 @@ artifacts/unity-verification/editor-compile.log
 4. Invoke MCP tools from a client:
    - `unity.project.inspect`
    - `unity.console.read`
+   - `unity.console.diagnose`
    - `unity.vision.capture`
    - `unity.meta_xr.validate_setup`
 
@@ -65,6 +66,7 @@ Verified tools:
 - `unity.capabilities.list`
 - `unity.project.inspect`
 - `unity.console.read`
+- `unity.console.diagnose`
 - `unity.assets.list`
 - `unity.scenes.list`
 - `unity.scene.inspect`

@@ -32,6 +32,7 @@ export type CapabilityEffect =
 export type VerificationSignal =
   | "structured_observation"
   | "console_snapshot"
+  | "console_diagnostics"
   | "console_clean"
   | "screenshot_available"
   | "visual_diff_checked"

@@ -21,6 +21,9 @@ const artifactsDir = join(repoRoot, "artifacts/unity-verification");
 const readyFile = join(artifactsDir, "bridge-ready.txt");
 const tokenFile = join(artifactsDir, "bridge-token.txt");
 const logPath = join(artifactsDir, "mcp-unity-e2e.log");
+const diagnosticWarningMarker = "UNITY_AI_E2E_DIAGNOSTIC_WARNING";
+const diagnosticErrorMarker = "UNITY_AI_E2E_DIAGNOSTIC_ERROR";
+const diagnosticExceptionMarker = "UNITY_AI_E2E_DIAGNOSTIC_EXCEPTION";
 
 if (!unityPath || !existsSync(unityPath)) {
   fail(`Unity executable not found. Set UNITY_PATH or pass it as the first argument.`);
@@ -36,6 +39,7 @@ if (clean) {
 
 mkdirSync(packagesDir, { recursive: true });
 mkdirSync(assetsDir, { recursive: true });
+mkdirSync(join(assetsDir, "Editor"), { recursive: true });
 mkdirSync(projectSettingsDir, { recursive: true });
 mkdirSync(artifactsDir, { recursive: true });
 rmSync(readyFile, { force: true });
@@ -58,6 +62,29 @@ writeFileSync(
 );
 
 writeFileSync(join(projectSettingsDir, "ProjectVersion.txt"), "m_EditorVersion: 6000.4.9f1\n");
+writeFileSync(
+  join(assetsDir, "Editor/UnityAiE2EConsoleDiagnosticsFixture.cs"),
+  `using System;
+using UnityEditor;
+using UnityEngine;
+
+[InitializeOnLoad]
+public static class UnityAiE2EConsoleDiagnosticsFixture
+{
+    static UnityAiE2EConsoleDiagnosticsFixture()
+    {
+        EditorApplication.delayCall += EmitDiagnostics;
+    }
+
+    private static void EmitDiagnostics()
+    {
+        Debug.LogWarning("${diagnosticWarningMarker} uses project root " + Application.dataPath + " and Windows root C:/Users/example/AppData/Local/Temp/unity-ai-warning.txt");
+        Debug.LogError("error CS9999: ${diagnosticErrorMarker} uses project root " + Application.dataPath + " and Unix root /tmp/unity-ai-error.txt");
+        Debug.LogException(new InvalidOperationException("${diagnosticExceptionMarker} uses project root " + Application.dataPath + " and macOS root /Users/example/unity-ai-exception.txt"));
+    }
+}
+`
+);
 
 const unity = spawn(unityPath, [
   "-batchmode",
@@ -95,9 +122,10 @@ try {
 
   await client.connect(transport);
 
-  await callTextTool(client, "unity.capabilities.list", {});
+  assertCapabilities(await callJsonTool(client, "unity.capabilities.list", {}));
   const before = await callJsonTool(client, "unity.project.inspect", {});
   await callJsonTool(client, "unity.console.read", {});
+  assertConsoleDiagnostics(await waitForConsoleDiagnostics(client, 60_000));
   assertAssetList(await callJsonTool(client, "unity.assets.list", { folder: "Assets", maxResults: 50 }));
   assertSceneList(await callJsonTool(client, "unity.scenes.list", {}));
   assertSceneInspect(await callJsonTool(client, "unity.scene.inspect", { includeComponents: true, maxDepth: 3, maxGameObjects: 50 }));
@@ -254,6 +282,25 @@ async function callJsonTool(client, name, args) {
 function assertTextResult(toolName, result) {
   if (!result?.content?.some((item) => item.type === "text" && item.text.length > 0)) {
     fail(`Tool ${toolName} did not return non-empty text content.`);
+  }
+}
+
+function assertCapabilities(capabilities) {
+  if (!Array.isArray(capabilities) || capabilities.length === 0) {
+    fail("unity.capabilities.list returned an invalid capability list shape.");
+  }
+
+  const diagnosticCapability = capabilities.find((capability) => capability.name === "unity.console.diagnose");
+  if (!diagnosticCapability) {
+    fail("unity.capabilities.list did not include unity.console.diagnose.");
+  }
+
+  if (!Array.isArray(diagnosticCapability.permissions) || !diagnosticCapability.permissions.includes("read_console")) {
+    fail("unity.console.diagnose capability must declare read_console permission.");
+  }
+
+  if (!Array.isArray(diagnosticCapability.effects) || !diagnosticCapability.effects.includes("report_only")) {
+    fail("unity.console.diagnose capability must remain report_only.");
   }
 }
 
@@ -525,6 +572,106 @@ function assertProjectSettings(report) {
 
   if (typeof report.activeBuildTarget !== "string" || typeof report.activeBuildTargetGroup !== "string" || typeof report.colorSpace !== "string") {
     fail("unity.project.settings.inspect returned an invalid settings shape.");
+  }
+}
+
+async function waitForConsoleDiagnostics(client, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let latest;
+
+  while (Date.now() < deadline) {
+    latest = await callJsonTool(client, "unity.console.diagnose", {});
+
+    if (hasExpectedConsoleDiagnostics(latest)) {
+      return latest;
+    }
+
+    await delay(1_000);
+  }
+
+  fail(`Timed out waiting for deterministic console diagnostics. Latest report: ${JSON.stringify(latest)}`);
+}
+
+function hasExpectedConsoleDiagnostics(report) {
+  if (!report || !Array.isArray(report.diagnostics)) {
+    return false;
+  }
+
+  return Boolean(
+    findDiagnostic(report, diagnosticWarningMarker, "warning", "warning")
+      && findDiagnostic(report, diagnosticErrorMarker, "error", "compiler_error")
+      && findDiagnostic(report, diagnosticExceptionMarker, "error", "runtime_exception")
+  );
+}
+
+function assertConsoleDiagnostics(report) {
+  if (typeof report.timestampUtc !== "string" || Number.isNaN(Date.parse(report.timestampUtc))) {
+    fail("unity.console.diagnose returned an invalid timestampUtc.");
+  }
+
+  if (typeof report.errorCount !== "number" || typeof report.warningCount !== "number" || typeof report.logCount !== "number" || typeof report.totalEntries !== "number" || typeof report.diagnosticCount !== "number" || typeof report.hasErrors !== "boolean" || !Array.isArray(report.diagnostics)) {
+    fail("unity.console.diagnose returned an invalid diagnostic report shape.");
+  }
+
+  if (report.diagnosticCount !== report.diagnostics.length) {
+    fail(`unity.console.diagnose diagnosticCount ${report.diagnosticCount} did not match diagnostics length ${report.diagnostics.length}.`);
+  }
+
+  if (!findDiagnostic(report, diagnosticWarningMarker, "warning", "warning")) {
+    fail("unity.console.diagnose did not map the deterministic warning fixture to severity=warning category=warning.");
+  }
+
+  if (!findDiagnostic(report, diagnosticErrorMarker, "error", "compiler_error")) {
+    fail("unity.console.diagnose did not map the deterministic error fixture to severity=error category=compiler_error.");
+  }
+
+  if (!findDiagnostic(report, diagnosticExceptionMarker, "error", "runtime_exception")) {
+    fail("unity.console.diagnose did not map the deterministic exception fixture to severity=error category=runtime_exception.");
+  }
+
+  for (const diagnostic of report.diagnostics) {
+    if (typeof diagnostic.category !== "string" || typeof diagnostic.severity !== "string" || typeof diagnostic.message !== "string" || typeof diagnostic.stackHint !== "string" || typeof diagnostic.functionHint !== "string" || typeof diagnostic.likelyRootCause !== "string" || typeof diagnostic.suggestedNextSafeAction !== "string") {
+      fail("unity.console.diagnose returned a diagnostic with missing string fields.");
+    }
+
+    const diagnosticStringFields = ["category", "severity", "message", "file", "stackHint", "functionHint", "likelyRootCause", "suggestedNextSafeAction"];
+    for (const field of diagnosticStringFields) {
+      assertNoAbsolutePathLeak(`diagnostic.${field}`, diagnostic[field]);
+    }
+
+    if (typeof diagnostic.line !== "number") {
+      fail("unity.console.diagnose returned a diagnostic with non-numeric line.");
+    }
+  }
+}
+
+function findDiagnostic(report, marker, severity, category) {
+  return report.diagnostics.find((diagnostic) => diagnostic.message.includes(marker) && diagnostic.severity === severity && diagnostic.category === category);
+}
+
+function assertNoAbsolutePathLeak(field, value) {
+  if (typeof value !== "string" || value.length === 0) {
+    return;
+  }
+
+  const normalized = value.replaceAll("\\", "/");
+  const normalizedTempProject = tempProject.replaceAll("\\", "/");
+  const normalizedRepoRoot = repoRoot.replaceAll("\\", "/");
+
+  if (normalized.includes(normalizedTempProject) || normalized.includes(normalizedRepoRoot)) {
+    fail(`unity.console.diagnose leaked the absolute project root in ${field}: ${value}`);
+  }
+
+  if (/\b[A-Za-z]:\//.test(normalized)) {
+    fail(`unity.console.diagnose leaked a Windows absolute path in ${field}: ${value}`);
+  }
+
+  if (/(^|[\s"'(])\/Users\//.test(normalized)) {
+    fail(`unity.console.diagnose leaked a /Users absolute path in ${field}: ${value}`);
+  }
+
+  if (/(^|[\s"'(])\/(?!absolute-path\])[^\s"'()]+/.test(normalized)) {
+    fail(`unity.console.diagnose leaked a generic Unix absolute path in ${field}: ${value}`);
   }
 }
 

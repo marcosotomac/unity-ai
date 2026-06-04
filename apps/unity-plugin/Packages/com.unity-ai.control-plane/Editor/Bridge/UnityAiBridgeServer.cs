@@ -218,6 +218,8 @@ namespace UnityAI.ControlPlane.Editor
                     return JsonResult(capability, envelope, ProjectInspector.InspectActiveProject());
                 case "unity.console.read":
                     return JsonResult(capability, envelope, ConsoleLogBridge.GetSummary());
+                case "unity.console.diagnose":
+                    return JsonResult(capability, envelope, ConsoleLogBridge.Diagnose());
                 case "unity.assets.list":
                     return JsonResult(capability, envelope, AssetListObserver.ListAssets(requestBody));
                 case "unity.scenes.list":

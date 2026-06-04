@@ -44,6 +44,7 @@ The bridge handles:
 
 - `POST /capabilities/unity.project.inspect`
 - `POST /capabilities/unity.console.read`
+- `POST /capabilities/unity.console.diagnose`
 - `POST /capabilities/unity.assets.list`
 - `POST /capabilities/unity.scenes.list`
 - `POST /capabilities/unity.scene.inspect`
@@ -66,6 +67,7 @@ The MCP server runs over stdio and exposes:
 - `unity.capabilities.list`
 - `unity.project.inspect`
 - `unity.console.read`
+- `unity.console.diagnose`
 - `unity.assets.list`
 - `unity.scenes.list`
 - `unity.scene.inspect`
@@ -90,6 +92,7 @@ The MCP server runs over stdio and exposes:
 - Mutating routes require a local bridge token.
 - The token is only a local development safety gate, not a complete permission model.
 - The first mutating route returns structured `auditEvents`, `verificationSignals`, and `verificationStatus` in addition to human-readable summary strings.
+- Console diagnostics are read-only and return category, severity, Unity-relative file/line hints when available, likely root cause, and next safe action.
 - Real scene mutations include the `scene_mutation_verified` signal only after post-action observation confirms the root object count changed.
 - Audit events are persisted as JSONL at `UnityAIArtifacts/Audit/events.jsonl` in the Unity project root.
 - Audit events include `write_audit_log` as an explicit side effect when persisted.
