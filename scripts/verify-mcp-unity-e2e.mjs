@@ -126,6 +126,7 @@ try {
   const before = await callJsonTool(client, "unity.project.inspect", {});
   await callJsonTool(client, "unity.console.read", {});
   assertConsoleDiagnostics(await waitForConsoleDiagnostics(client, 60_000));
+  assertConsoleFixPlans(await callJsonTool(client, "unity.console.plan_fix", {}));
   assertAssetList(await callJsonTool(client, "unity.assets.list", { folder: "Assets", maxResults: 50 }));
   assertSceneList(await callJsonTool(client, "unity.scenes.list", {}));
   assertSceneInspect(await callJsonTool(client, "unity.scene.inspect", { includeComponents: true, maxDepth: 3, maxGameObjects: 50 }));
@@ -295,12 +296,29 @@ function assertCapabilities(capabilities) {
     fail("unity.capabilities.list did not include unity.console.diagnose.");
   }
 
+  const fixPlanCapability = capabilities.find((capability) => capability.name === "unity.console.plan_fix");
+  if (!fixPlanCapability) {
+    fail("unity.capabilities.list did not include unity.console.plan_fix.");
+  }
+
   if (!Array.isArray(diagnosticCapability.permissions) || !diagnosticCapability.permissions.includes("read_console")) {
     fail("unity.console.diagnose capability must declare read_console permission.");
   }
 
   if (!Array.isArray(diagnosticCapability.effects) || !diagnosticCapability.effects.includes("report_only")) {
     fail("unity.console.diagnose capability must remain report_only.");
+  }
+
+  if (!Array.isArray(fixPlanCapability.permissions) || !fixPlanCapability.permissions.includes("read_console")) {
+    fail("unity.console.plan_fix capability must declare read_console permission.");
+  }
+
+  if (!Array.isArray(fixPlanCapability.effects) || !fixPlanCapability.effects.includes("report_only")) {
+    fail("unity.console.plan_fix capability must remain report_only.");
+  }
+
+  if (!Array.isArray(fixPlanCapability.verification) || !fixPlanCapability.verification.includes("fix_plan_generated")) {
+    fail("unity.console.plan_fix capability must declare fix_plan_generated verification.");
   }
 }
 
@@ -645,6 +663,60 @@ function assertConsoleDiagnostics(report) {
   }
 }
 
+function assertConsoleFixPlans(report) {
+  if (typeof report.timestampUtc !== "string" || Number.isNaN(Date.parse(report.timestampUtc))) {
+    fail("unity.console.plan_fix returned an invalid timestampUtc.");
+  }
+
+  if (typeof report.diagnosticCount !== "number" || typeof report.planCount !== "number" || !Array.isArray(report.plans)) {
+    fail("unity.console.plan_fix returned an invalid fix plan report shape.");
+  }
+
+  if (report.planCount !== report.plans.length) {
+    fail(`unity.console.plan_fix planCount ${report.planCount} did not match plans length ${report.plans.length}.`);
+  }
+
+  if (report.planCount === 0) {
+    fail("unity.console.plan_fix returned no plans for deterministic console fixtures.");
+  }
+
+  if (!Array.isArray(report.verificationSignals) || !report.verificationSignals.includes("fix_plan_generated")) {
+    fail("unity.console.plan_fix did not return fix_plan_generated verification signal.");
+  }
+
+  for (const category of ["compiler_error", "runtime_exception", "warning"]) {
+    if (!report.plans.some((plan) => plan.diagnosticCategory === category)) {
+      fail(`unity.console.plan_fix did not return a ${category} plan for deterministic fixtures.`);
+    }
+  }
+
+  for (const [index, plan] of report.plans.entries()) {
+    if (typeof plan.id !== "string" || !plan.id.length || typeof plan.diagnosticCategory !== "string" || typeof plan.severity !== "string" || typeof plan.targetFile !== "string" || typeof plan.summary !== "string" || typeof plan.rationale !== "string" || typeof plan.riskLevel !== "string" || typeof plan.rollbackNotes !== "string") {
+      fail(`unity.console.plan_fix returned plan ${index} with missing string fields.`);
+    }
+
+    if (typeof plan.targetLine !== "number" || typeof plan.canAutoApply !== "boolean" || typeof plan.requiresConfirmationBeforeApply !== "boolean" || !Array.isArray(plan.proposedSteps) || !Array.isArray(plan.verificationSteps)) {
+      fail(`unity.console.plan_fix returned plan ${index} with invalid typed fields.`);
+    }
+
+    if (plan.canAutoApply !== false) {
+      fail(`unity.console.plan_fix plan ${plan.id} must not be auto-applicable in this read-only slice.`);
+    }
+
+    if (plan.requiresConfirmationBeforeApply !== true) {
+      fail(`unity.console.plan_fix plan ${plan.id} must require confirmation before any later apply step.`);
+    }
+
+    for (const forbiddenField of ["auditEvents", "auditPersisted", "auditLogPath", "auditLogAbsolutePath", "created", "undone", "mutated", "rootGameObjectCountAfter"]) {
+      if (Object.prototype.hasOwnProperty.call(plan, forbiddenField)) {
+        fail(`unity.console.plan_fix plan ${plan.id} exposed mutation indicator field ${forbiddenField}.`);
+      }
+    }
+
+    assertNoAbsolutePathLeakInValue(`plan.${plan.id}`, plan);
+  }
+}
+
 function findDiagnostic(report, marker, severity, category) {
   return report.diagnostics.find((diagnostic) => diagnostic.message.includes(marker) && diagnostic.severity === severity && diagnostic.category === category);
 }
@@ -672,6 +744,24 @@ function assertNoAbsolutePathLeak(field, value) {
 
   if (/(^|[\s"'(])\/(?!absolute-path\])[^\s"'()]+/.test(normalized)) {
     fail(`unity.console.diagnose leaked a generic Unix absolute path in ${field}: ${value}`);
+  }
+}
+
+function assertNoAbsolutePathLeakInValue(field, value) {
+  if (typeof value === "string") {
+    assertNoAbsolutePathLeak(field, value);
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertNoAbsolutePathLeakInValue(`${field}[${index}]`, item));
+    return;
+  }
+
+  if (value && typeof value === "object") {
+    for (const [key, nestedValue] of Object.entries(value)) {
+      assertNoAbsolutePathLeakInValue(`${field}.${key}`, nestedValue);
+    }
   }
 }
 

@@ -42,6 +42,7 @@ artifacts/unity-verification/editor-compile.log
    - `unity.project.inspect`
    - `unity.console.read`
    - `unity.console.diagnose`
+   - `unity.console.plan_fix`
    - `unity.vision.capture`
    - `unity.meta_xr.validate_setup`
 
@@ -67,6 +68,7 @@ Verified tools:
 - `unity.project.inspect`
 - `unity.console.read`
 - `unity.console.diagnose`
+- `unity.console.plan_fix`
 - `unity.assets.list`
 - `unity.scenes.list`
 - `unity.scene.inspect`

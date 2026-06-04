@@ -120,8 +120,8 @@ Build the smallest closed-loop prototype:
 1. Unity plugin connects to the MCP server.
 2. MCP server can inspect the active project and read Unity Console logs.
 3. Plugin captures Scene View or Game View screenshots.
-4. A log resolver agent can diagnose a compiler/runtime error.
-5. The system applies a controlled fix.
+4. A log resolver agent can diagnose a compiler/runtime error and propose a safe read-only fix plan.
+5. The system applies a controlled fix after confirmation.
 6. Unity recompiles.
 7. The system verifies logs and captures a final screenshot/report.
 

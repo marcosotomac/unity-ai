@@ -33,6 +33,7 @@ export type VerificationSignal =
   | "structured_observation"
   | "console_snapshot"
   | "console_diagnostics"
+  | "fix_plan_generated"
   | "console_clean"
   | "screenshot_available"
   | "visual_diff_checked"

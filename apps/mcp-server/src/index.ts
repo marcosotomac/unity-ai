@@ -60,6 +60,15 @@ server.registerTool(
 );
 
 server.registerTool(
+  "unity.console.plan_fix",
+  {
+    description: "Generate conservative read-only fix plans from Unity Console diagnostics.",
+    inputSchema: z.object({})
+  },
+  async () => bridgeTool("unity.console.plan_fix")
+);
+
+server.registerTool(
   "unity.assets.list",
   {
     description: "List Unity project assets with paths, GUIDs, and main asset types.",

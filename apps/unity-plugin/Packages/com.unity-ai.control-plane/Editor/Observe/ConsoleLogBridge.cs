@@ -52,6 +52,34 @@ namespace UnityAI.ControlPlane.Editor
         public string suggestedNextSafeAction;
     }
 
+    [Serializable]
+    public sealed class ConsoleFixPlanReport
+    {
+        public string timestampUtc;
+        public int diagnosticCount;
+        public int planCount;
+        public List<ConsoleFixPlan> plans = new();
+        public List<string> verificationSignals = new();
+    }
+
+    [Serializable]
+    public sealed class ConsoleFixPlan
+    {
+        public string id;
+        public string diagnosticCategory;
+        public string severity;
+        public string targetFile;
+        public int targetLine;
+        public string summary;
+        public string rationale;
+        public string riskLevel;
+        public bool canAutoApply;
+        public bool requiresConfirmationBeforeApply;
+        public List<string> proposedSteps = new();
+        public List<string> verificationSteps = new();
+        public string rollbackNotes;
+    }
+
     internal sealed class ConsoleEntrySnapshot
     {
         public string type;
@@ -125,6 +153,29 @@ namespace UnityAI.ControlPlane.Editor
             }
 
             report.diagnosticCount = report.diagnostics.Count;
+            return report;
+        }
+
+        public static ConsoleFixPlanReport PlanFix()
+        {
+            var diagnosticReport = Diagnose();
+            var report = new ConsoleFixPlanReport
+            {
+                timestampUtc = DateTime.UtcNow.ToString("o"),
+                diagnosticCount = diagnosticReport.diagnosticCount
+            };
+
+            for (var index = 0; index < diagnosticReport.diagnostics.Count; index += 1)
+            {
+                report.plans.Add(BuildFixPlan(diagnosticReport.diagnostics[index], index + 1));
+            }
+
+            report.planCount = report.plans.Count;
+            if (report.planCount > 0)
+            {
+                report.verificationSignals.Add("fix_plan_generated");
+            }
+
             return report;
         }
 
@@ -245,6 +296,153 @@ namespace UnityAI.ControlPlane.Editor
                 likelyRootCause = SummarizeRootCause(category, message, file, line),
                 suggestedNextSafeAction = SuggestNextSafeAction(category, file, line)
             };
+        }
+
+        private static ConsoleFixPlan BuildFixPlan(ConsoleDiagnosticEntry diagnostic, int ordinal)
+        {
+            var target = string.IsNullOrWhiteSpace(diagnostic.file) ? "the reported Unity context" : diagnostic.file;
+            var location = FormatLocation(diagnostic.file, diagnostic.line);
+            var plan = new ConsoleFixPlan
+            {
+                id = $"console-fix-plan-{ordinal:000}",
+                diagnosticCategory = diagnostic.category,
+                severity = diagnostic.severity,
+                targetFile = diagnostic.file,
+                targetLine = diagnostic.line,
+                summary = SummarizeFixPlan(diagnostic, location),
+                rationale = BuildFixRationale(diagnostic, location),
+                riskLevel = DeterminePlanRisk(diagnostic.category),
+                canAutoApply = false,
+                requiresConfirmationBeforeApply = true,
+                rollbackNotes = "No changes are made by this plan. If a later confirmed apply step edits files or scene data, capture a pre-change snapshot and revert only that confirmed change if verification fails."
+            };
+
+            AddProposedSteps(plan, diagnostic, target, location);
+            plan.verificationSteps.Add("Run Unity compilation or wait for the Editor compile cycle to finish.");
+            plan.verificationSteps.Add("Run unity.console.diagnose again and compare the targeted diagnostic category, file, and line.");
+            plan.verificationSteps.Add("Only proceed if diagnostics are reduced or the remaining messages have a new explicit plan.");
+            return plan;
+        }
+
+        private static string SummarizeFixPlan(ConsoleDiagnosticEntry diagnostic, string location)
+        {
+            if (diagnostic.category == "compiler_error")
+            {
+                var codeSummary = SummarizeCSharpCompilerCode(diagnostic.message);
+                return string.IsNullOrWhiteSpace(codeSummary)
+                    ? $"Inspect the compiler error at {location} and prepare a minimal C# fix plan."
+                    : $"Inspect {location}: {codeSummary}";
+            }
+
+            switch (diagnostic.category)
+            {
+                case "runtime_exception":
+                    return $"Inspect the first project stack frame for the runtime exception at {location}.";
+                case "import_error":
+                    return $"Inspect asset and importer metadata for the import error at {location}.";
+                case "warning":
+                    return $"Defer the warning at {location} unless it blocks verification.";
+                default:
+                    return $"Collect more context before proposing a change for the console entry at {location}.";
+            }
+        }
+
+        private static string BuildFixRationale(ConsoleDiagnosticEntry diagnostic, string location)
+        {
+            switch (diagnostic.category)
+            {
+                case "compiler_error":
+                    return $"Compiler errors block recompilation, but this read-only plan must inspect {location} before proposing any confirmed file edit.";
+                case "runtime_exception":
+                    return $"Runtime exceptions can depend on scene state and object references, so inspect {location} and reproduce before any confirmed change.";
+                case "import_error":
+                    return $"Import failures can be caused by asset data, importer settings, or package state; inspect metadata before changing assets.";
+                case "warning":
+                    return "Warnings are usually non-blocking; prioritize errors and only plan a confirmed fix if verification is blocked.";
+                default:
+                    return "The diagnostic category is not specific enough for a safe change; gather more structured context first.";
+            }
+        }
+
+        private static void AddProposedSteps(ConsoleFixPlan plan, ConsoleDiagnosticEntry diagnostic, string target, string location)
+        {
+            switch (diagnostic.category)
+            {
+                case "compiler_error":
+                    plan.proposedSteps.Add($"Read the target script at {location}; do not edit during planning.");
+                    plan.proposedSteps.Add("Identify the smallest C# change that addresses the reported compiler error code and preserves surrounding behavior.");
+                    plan.proposedSteps.Add("Prepare a later confirmed apply request for that one targeted change only.");
+                    break;
+                case "runtime_exception":
+                    plan.proposedSteps.Add($"Inspect the first project stack frame and related scene object state for {target}.");
+                    plan.proposedSteps.Add("Reproduce the exception path and identify the missing guard, reference, or invalid state.");
+                    plan.proposedSteps.Add("Prepare a guarded later apply request only after the failing state is understood.");
+                    break;
+                case "import_error":
+                    plan.proposedSteps.Add($"Inspect the asset path or package context for {target}.");
+                    plan.proposedSteps.Add("Read importer metadata and dependencies before proposing asset or settings changes.");
+                    plan.proposedSteps.Add("Prepare a later confirmed apply request only if metadata points to a narrow safe change.");
+                    break;
+                case "warning":
+                    plan.proposedSteps.Add("Record the warning and resolve blocking errors first.");
+                    plan.proposedSteps.Add("Only inspect the warning further if it blocks verification or points to deprecated API usage in project code.");
+                    break;
+                default:
+                    plan.proposedSteps.Add("Collect more context with project, script, asset, scene, or package inspection.");
+                    plan.proposedSteps.Add("Classify the diagnostic before proposing any confirmed change.");
+                    break;
+            }
+        }
+
+        private static string DeterminePlanRisk(string category)
+        {
+            switch (category)
+            {
+                case "warning":
+                    return "low";
+                case "unknown":
+                    return "medium";
+                default:
+                    return "medium";
+            }
+        }
+
+        private static string SummarizeCSharpCompilerCode(string message)
+        {
+            var match = Regex.Match(message ?? string.Empty, @"\bCS\d{4}\b", RegexOptions.IgnoreCase);
+            if (!match.Success)
+            {
+                return string.Empty;
+            }
+
+            var code = match.Value.ToUpperInvariant();
+            switch (code)
+            {
+                case "CS0103":
+                    return "CS0103 means the referenced name is not in scope; inspect spelling, using directives, fields, and local variables.";
+                case "CS0246":
+                    return "CS0246 means a type or namespace cannot be found; inspect assembly references, namespaces, and using directives.";
+                case "CS1061":
+                    return "CS1061 means a member is missing on the target type; inspect the receiver type and available API.";
+                case "CS1503":
+                    return "CS1503 means an argument type does not match the called API; inspect the call signature and conversion.";
+                case "CS1002":
+                    return "CS1002 means a semicolon is expected; inspect the nearby statement syntax.";
+                case "CS1513":
+                    return "CS1513 means a closing brace is expected; inspect the surrounding block structure.";
+                default:
+                    return $"{code} is a C# compiler error; inspect the referenced script and the smallest syntax or API mismatch near the reported line.";
+            }
+        }
+
+        private static string FormatLocation(string file, int line)
+        {
+            if (string.IsNullOrWhiteSpace(file))
+            {
+                return "the reported Unity context";
+            }
+
+            return line > 0 ? $"{file}:{line}" : file;
         }
 
         private static string DetermineSeverity(ConsoleEntrySnapshot entry, string message)

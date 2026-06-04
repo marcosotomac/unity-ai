@@ -23,6 +23,13 @@ export const initialCapabilities: CapabilityManifest[] = [
     verification: ["console_diagnostics"]
   },
   {
+    name: "unity.console.plan_fix",
+    description: "Derive conservative, read-only fix plans from Unity Console diagnostics.",
+    permissions: ["read_console", "read_project"],
+    effects: ["report_only"],
+    verification: ["console_diagnostics", "fix_plan_generated"]
+  },
+  {
     name: "unity.assets.list",
     description: "List Unity project assets with paths, GUIDs, and main asset types.",
     permissions: ["read_project", "read_assets"],

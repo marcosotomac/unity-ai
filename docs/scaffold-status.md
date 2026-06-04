@@ -21,6 +21,7 @@ Current status: the repository has a working product and architecture scaffold p
 - Mutating `unity.editor.*` routes require a local bridge token.
 - Live capability list is aligned with the currently routed observe/validate/act tools.
 - `unity.console.diagnose` classifies console entries as compiler errors, runtime exceptions, warnings, import errors, or unknown and returns safe next-action guidance without mutating project state.
+- `unity.console.plan_fix` derives conservative read-only fix plans from diagnostics and always requires confirmation before any later apply step.
 - MCP client → MCP server → Unity bridge → Unity Editor API e2e verification passes for initial observe/validate tools and the authenticated first act mutation.
 
 ## Not verified yet
@@ -34,7 +35,7 @@ Current status: the repository has a working product and architecture scaffold p
 | Local bridge | Uses a simple HTTP bridge on localhost before a richer transport is chosen. | Validate it inside Unity, then decide whether to keep HTTP or move to WebSocket/named pipes. |
 | Mutating actions | One low-risk create operation and one narrow Undo operation are exposed. | Expand only after permission, confirmation, persisted audit, and correlated rollback gates exist. |
 | Console logs | Console count reading uses Unity internal `LogEntries` reflection, which can vary by Unity version. | Keep graceful fallback and replace with a version-tolerant adapter after Unity testing. |
-| Console diagnostics | Structured diagnostics depend on Unity's internal console entry shape when available and fall back to captured runtime logs. | Add fixture-driven compiler/runtime error e2e coverage before automated fix planning. |
+| Console diagnostics | Structured diagnostics and fix plans depend on Unity's internal console entry shape when available and fall back to captured runtime logs. | Keep fixture-driven compiler/runtime/warning e2e coverage before adding confirmed apply. |
 | Screenshots | Game View screenshot capture may complete after the immediate refresh call. | Add an async/polling artifact check before returning results through MCP. |
 | Scene View | Scene capture requires an active Scene View camera. | Return a structured unavailable state instead of throwing through the bridge. |
 | Unity package | `.meta` files are not committed yet. | Generate and commit stable `.meta` files after importing the package in Unity. |
@@ -43,9 +44,9 @@ Current status: the repository has a working product and architecture scaffold p
 
 Advance the first diagnose/fix loop:
 
-1. add fixture-driven compiler/runtime error detection
-2. generate a safe fix plan from `unity.console.diagnose`
-3. recompile and verify console state before any gated mutation
+1. add a confirmed safe apply step for one narrow diagnostic category
+2. recompile and verify console state before reporting success
+3. produce before/after audit evidence
 
 Use:
 
