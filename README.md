@@ -134,28 +134,30 @@ Success criteria:
 
 ## Quickstart: automatic setup
 
-Run the setup script from this repository to install the Unity package into a local Unity project and/or configure opencode to start the MCP server.
+Run the setup script from this repository to install the Unity package into a local Unity project and/or configure opencode, Claude Code, or Codex to start the MCP server.
 
 Dry run first:
 
 ```bash
-npm run setup:user -- --unity-project /path/to/UnityProject --opencode
+npm run setup:user -- --unity-project /path/to/UnityProject --opencode --claude-code --codex
 ```
 
 Apply the changes:
 
 ```bash
-npm run setup:user -- --unity-project /path/to/UnityProject --opencode --build --write
+npm run setup:user -- --unity-project /path/to/UnityProject --opencode --claude-code --codex --build --write
 ```
 
 What it changes:
 
 - Adds or updates `Packages/manifest.json` in the target Unity project with a local `file:` dependency to this repo's Unity package.
 - Adds or updates `mcp.unity-ai` in `~/.config/opencode/opencode.json` using an absolute path to `apps/mcp-server/dist/index.js`.
+- Configures Claude Code through `claude mcp add-json unity-ai ...`; the script does not edit Claude Code config files directly.
+- Adds or updates a generated `unity-ai` MCP server block in `~/.codex/config.toml`.
 - Creates `.bak-YYYYMMDDHHmmss` backups next to files before writing.
-- Generates and prints a local bridge token when applying with `--write --opencode` without `--bridge-token`; use that same token when starting the Unity local bridge.
+- Generates and prints a local bridge token when applying with `--write` and an MCP host without `--bridge-token`; use that same token when starting the Unity local bridge.
 
-After changing opencode config, restart opencode so it reloads `~/.config/opencode/opencode.json`.
+After changing opencode or Codex config, restart the host so it reloads config. Claude Code is configured through its CLI.
 
 See `docs/setup.md` for focused setup details and examples.
 
