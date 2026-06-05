@@ -69,6 +69,25 @@ server.registerTool(
 );
 
 server.registerTool(
+  "unity.console.apply_fix",
+  {
+    description: "Apply a confirmed, checkpointed one-line replacement to a Unity C# script.",
+    inputSchema: z.object({
+      dryRun: z.boolean().default(true),
+      confirm: z.boolean().default(false),
+      targetFile: z.string().min(1),
+      targetLine: z.number().int().min(1),
+      expectedOriginalLine: z.string(),
+      replacementLine: z.string(),
+      expectedDiagnosticCategory: z.string().optional(),
+      expectedMessageContains: z.string().optional(),
+      planId: z.string().optional()
+    })
+  },
+  async (input) => bridgeTool("unity.console.apply_fix", input)
+);
+
+server.registerTool(
   "unity.assets.list",
   {
     description: "List Unity project assets with paths, GUIDs, and main asset types.",

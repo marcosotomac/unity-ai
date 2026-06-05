@@ -80,6 +80,50 @@ namespace UnityAI.ControlPlane.Editor
         public string rollbackNotes;
     }
 
+    [Serializable]
+    public sealed class ConsoleApplyFixInput
+    {
+        public bool dryRun = true;
+        public bool confirm = false;
+        public string targetFile;
+        public int targetLine;
+        public string expectedOriginalLine;
+        public string replacementLine;
+        public string expectedDiagnosticCategory;
+        public string expectedMessageContains;
+        public string planId;
+    }
+
+    [Serializable]
+    public sealed class ConsoleApplyFixRequest
+    {
+        public ConsoleApplyFixInput input = new();
+    }
+
+    [Serializable]
+    public sealed class ConsoleApplyFixResult
+    {
+        public bool dryRun;
+        public bool applied;
+        public bool refused;
+        public bool requiresConfirmation;
+        public string requestId;
+        public string correlationId;
+        public string targetFile;
+        public int targetLine;
+        public string audit;
+        public string verification;
+        public UnityAiAuditEvent[] auditEvents;
+        public string[] verificationSignals;
+        public string verificationStatus;
+        public string[] requiredPermissions;
+        public bool auditPersisted;
+        public string auditLogPath;
+        public string checkpointPath;
+        public bool checkpointCreated;
+        public string timestampUtc;
+    }
+
     internal sealed class ConsoleEntrySnapshot
     {
         public string type;
@@ -177,6 +221,428 @@ namespace UnityAI.ControlPlane.Editor
             }
 
             return report;
+        }
+
+        public static ConsoleApplyFixResult ApplyFix(string requestBody)
+        {
+            var request = ParseApplyFixRequest(requestBody);
+            var envelope = ParseEnvelope(requestBody);
+            var input = request.input ?? new ConsoleApplyFixInput();
+            var dryRun = input.dryRun;
+            var targetFile = NormalizeApplyFixTargetPath(input.targetFile);
+            var validationError = ValidateApplyFixInput(input, targetFile);
+
+            if (!string.IsNullOrWhiteSpace(validationError))
+            {
+                return BuildApplyFixResult(envelope, dryRun, false, true, false, targetFile, input.targetLine, string.Empty, false, "refused", new[] { "operation_audited", "structured_observation" }, $"REFUSED: {validationError}", "No file mutation performed.", new[] { "report_only" });
+            }
+
+            if (!dryRun && !input.confirm)
+            {
+                return BuildApplyFixResult(envelope, false, false, false, true, targetFile, input.targetLine, string.Empty, false, "needs_confirmation", new[] { "operation_audited", "structured_observation" }, $"CONFIRMATION REQUIRED: would replace one line in {targetFile}:{input.targetLine}.", "No file mutation performed because confirm=true was not provided.", new[] { "report_only" });
+            }
+
+            var expectationError = ValidateDiagnosticExpectation(input, targetFile);
+            if (!string.IsNullOrWhiteSpace(expectationError))
+            {
+                return BuildApplyFixResult(envelope, dryRun, false, true, false, targetFile, input.targetLine, string.Empty, false, "refused", new[] { "operation_audited", "structured_observation" }, $"REFUSED: {expectationError}", "No file mutation performed.", new[] { "report_only" });
+            }
+
+            var containmentError = TryResolveSafeApplyFixPath(targetFile, out var absolutePath);
+            if (!string.IsNullOrWhiteSpace(containmentError))
+            {
+                return BuildApplyFixResult(envelope, dryRun, false, true, false, targetFile, input.targetLine, string.Empty, false, "refused", new[] { "operation_audited", "structured_observation" }, $"REFUSED: {containmentError}", "No file mutation performed.", new[] { "report_only" });
+            }
+
+            var readError = TryReadLine(absolutePath, input.targetLine, out var lines, out var lineEnding, out var currentLine);
+            if (!string.IsNullOrWhiteSpace(readError))
+            {
+                return BuildApplyFixResult(envelope, dryRun, false, true, false, targetFile, input.targetLine, string.Empty, false, "refused", new[] { "operation_audited", "structured_observation" }, $"REFUSED: {readError}", "No file mutation performed.", new[] { "report_only" });
+            }
+
+            if (!string.Equals(currentLine, input.expectedOriginalLine ?? string.Empty, StringComparison.Ordinal))
+            {
+                return BuildApplyFixResult(envelope, dryRun, false, true, false, targetFile, input.targetLine, string.Empty, false, "refused", new[] { "operation_audited", "structured_observation" }, $"REFUSED: target line did not match expectedOriginalLine for {targetFile}:{input.targetLine}.", "No file mutation performed because the file content changed or the request targeted the wrong line.", new[] { "report_only" });
+            }
+
+            if (dryRun)
+            {
+                return BuildApplyFixResult(envelope, true, false, false, false, targetFile, input.targetLine, string.Empty, false, "passed", new[] { "operation_audited", "structured_observation" }, $"DRY RUN: would replace one line in {targetFile}:{input.targetLine}.", "No file mutation performed.", new[] { "report_only" });
+            }
+
+            var checkpointPath = CreateCheckpoint(absolutePath, targetFile);
+            lines[input.targetLine - 1] = input.replacementLine ?? string.Empty;
+            File.WriteAllText(absolutePath, string.Join(lineEnding, lines), DetectUtf8WithBom(absolutePath) ? new System.Text.UTF8Encoding(true) : new System.Text.UTF8Encoding(false));
+            AssetDatabase.ImportAsset(targetFile);
+
+            var verified = VerifyLine(absolutePath, input.targetLine, input.replacementLine ?? string.Empty);
+            return BuildApplyFixResult(
+                envelope,
+                false,
+                verified,
+                false,
+                false,
+                targetFile,
+                input.targetLine,
+                checkpointPath,
+                true,
+                verified ? "passed" : "failed",
+                verified
+                    ? new[] { "operation_audited", "structured_observation", "checkpoint_created", "line_replacement_verified" }
+                    : new[] { "operation_audited", "structured_observation", "checkpoint_created" },
+                verified ? $"Applied one-line replacement to {targetFile}:{input.targetLine}." : $"Applied one-line replacement to {targetFile}:{input.targetLine}, but verification failed.",
+                verified ? "Target line now matches replacementLine." : "Target line did not match replacementLine after writing.",
+                new[] { "asset_change", "write_checkpoint" }
+            );
+        }
+
+        private static ConsoleApplyFixResult BuildApplyFixResult(UnityAiRequestEnvelope envelope, bool dryRun, bool applied, bool refused, bool requiresConfirmation, string targetFile, int targetLine, string checkpointPath, bool checkpointCreated, string verificationStatus, string[] verificationSignals, string auditMessage, string verificationMessage, string[] effects)
+        {
+            var timestamp = DateTime.UtcNow.ToString("O");
+            var auditEvents = new[]
+            {
+                CreateApplyFixAuditEvent(timestamp, envelope, auditMessage, effects, true)
+            };
+            var auditPersisted = PersistAudit(auditEvents);
+            var responseAuditEvents = auditPersisted
+                ? auditEvents
+                : new[] { CreateApplyFixAuditEvent(timestamp, envelope, auditMessage, effects, false) };
+
+            return new ConsoleApplyFixResult
+            {
+                dryRun = dryRun,
+                applied = applied,
+                refused = refused,
+                requiresConfirmation = requiresConfirmation,
+                requestId = envelope.requestId,
+                correlationId = envelope.correlationId,
+                targetFile = targetFile,
+                targetLine = targetLine,
+                audit = auditMessage,
+                verification = verificationMessage,
+                auditEvents = responseAuditEvents,
+                verificationSignals = verificationSignals,
+                verificationStatus = verificationStatus,
+                requiredPermissions = new[] { "modify_assets" },
+                auditPersisted = auditPersisted,
+                auditLogPath = AuditLogStore.AuditLogRelativePath,
+                checkpointPath = checkpointPath,
+                checkpointCreated = checkpointCreated,
+                timestampUtc = timestamp
+            };
+        }
+
+        private static string ValidateApplyFixInput(ConsoleApplyFixInput input, string targetFile)
+        {
+            var originalTargetFile = input.targetFile ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(originalTargetFile))
+            {
+                return "targetFile is required.";
+            }
+
+            if (Path.IsPathRooted(originalTargetFile) || originalTargetFile.StartsWith("/", StringComparison.Ordinal) || Regex.IsMatch(originalTargetFile, @"^[A-Za-z]:[\\/]"))
+            {
+                return "absolute targetFile paths are not allowed.";
+            }
+
+            if (originalTargetFile.Contains("..", StringComparison.Ordinal))
+            {
+                return "targetFile must not contain '..'.";
+            }
+
+            if (!targetFile.StartsWith("Assets/", StringComparison.Ordinal))
+            {
+                return "targetFile must be under Assets/.";
+            }
+
+            if (targetFile.StartsWith("Packages/", StringComparison.Ordinal))
+            {
+                return "Packages/ edits are not supported.";
+            }
+
+            if (!targetFile.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) || targetFile.EndsWith(".meta", StringComparison.OrdinalIgnoreCase))
+            {
+                return "only Assets/**/*.cs files are supported.";
+            }
+
+            if (targetFile.StartsWith("Assets/Generated/", StringComparison.OrdinalIgnoreCase) || targetFile.Contains("/Generated/", StringComparison.OrdinalIgnoreCase))
+            {
+                return "generated folders are not supported.";
+            }
+
+            if (input.targetLine < 1)
+            {
+                return "targetLine must be 1-based.";
+            }
+
+            if (ContainsLineBreak(input.expectedOriginalLine) || ContainsLineBreak(input.replacementLine))
+            {
+                return "expectedOriginalLine and replacementLine must be single lines.";
+            }
+
+            return string.Empty;
+        }
+
+        private static string NormalizeApplyFixTargetPath(string value)
+        {
+            var normalized = (value ?? string.Empty).Trim().Replace('\\', '/');
+            return Path.IsPathRooted(normalized) || Regex.IsMatch(normalized, @"^[A-Za-z]:[/]") ? string.Empty : normalized;
+        }
+
+        private static string TryResolveSafeApplyFixPath(string targetFile, out string absolutePath)
+        {
+            absolutePath = string.Empty;
+
+            try
+            {
+                var projectRoot = Path.GetFullPath(GetProjectRoot()).Replace('\\', '/').TrimEnd('/');
+                var assetsRoot = Path.GetFullPath(Application.dataPath).Replace('\\', '/').TrimEnd('/');
+                var candidate = Path.GetFullPath(Path.Combine(projectRoot, targetFile)).Replace('\\', '/');
+
+                if (!candidate.StartsWith(projectRoot + "/", StringComparison.Ordinal) || !candidate.StartsWith(assetsRoot + "/", StringComparison.Ordinal))
+                {
+                    return "targetFile resolved outside the Unity project Assets directory.";
+                }
+
+                var reparsePointError = ValidateNoReparsePoints(candidate, assetsRoot);
+                if (!string.IsNullOrWhiteSpace(reparsePointError))
+                {
+                    return reparsePointError;
+                }
+
+                absolutePath = candidate;
+                return string.Empty;
+            }
+            catch (Exception exception)
+            {
+                return $"targetFile could not be resolved safely: {exception.Message}";
+            }
+        }
+
+        private static string ValidateNoReparsePoints(string candidate, string assetsRoot)
+        {
+            var current = assetsRoot;
+            var relative = candidate.Substring(assetsRoot.Length).TrimStart('/');
+            var parts = relative.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+
+            foreach (var part in parts)
+            {
+                current = Path.Combine(current, part).Replace('\\', '/');
+                if (!File.Exists(current) && !Directory.Exists(current))
+                {
+                    continue;
+                }
+
+                var attributes = File.GetAttributes(current);
+                if ((attributes & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint)
+                {
+                    return "targetFile must not resolve through symlinks or reparse points.";
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static string ValidateDiagnosticExpectation(ConsoleApplyFixInput input, string targetFile)
+        {
+            var hasCategory = !string.IsNullOrWhiteSpace(input.expectedDiagnosticCategory);
+            var hasMessage = !string.IsNullOrWhiteSpace(input.expectedMessageContains);
+            var hasPlan = !string.IsNullOrWhiteSpace(input.planId);
+
+            if (!hasCategory && !hasMessage && !hasPlan)
+            {
+                return string.Empty;
+            }
+
+            var category = (input.expectedDiagnosticCategory ?? string.Empty).Trim();
+            if (hasCategory && !IsSupportedDiagnosticCategory(category))
+            {
+                return $"unsupported diagnostic category expectation: {category}.";
+            }
+
+            if (hasPlan)
+            {
+                var planReport = PlanFix();
+                var foundPlan = false;
+                foreach (var plan in planReport.plans)
+                {
+                    if (string.Equals(plan.id, input.planId, StringComparison.Ordinal) && string.Equals(plan.targetFile, targetFile, StringComparison.Ordinal) && plan.targetLine == input.targetLine)
+                    {
+                        foundPlan = !hasCategory || string.Equals(plan.diagnosticCategory, category, StringComparison.Ordinal);
+                        break;
+                    }
+                }
+
+                if (!foundPlan)
+                {
+                    return "planId expectation did not match the current fix plans.";
+                }
+            }
+
+            if (!hasCategory && !hasMessage)
+            {
+                return string.Empty;
+            }
+
+            var diagnostics = Diagnose().diagnostics;
+            foreach (var diagnostic in diagnostics)
+            {
+                var matchesCategory = !hasCategory || string.Equals(diagnostic.category, category, StringComparison.Ordinal);
+                var matchesMessage = !hasMessage || (diagnostic.message ?? string.Empty).Contains(input.expectedMessageContains, StringComparison.Ordinal);
+                var matchesLocation = string.Equals(diagnostic.file, targetFile, StringComparison.Ordinal) && diagnostic.line == input.targetLine;
+
+                if (matchesCategory && matchesMessage && matchesLocation)
+                {
+                    return string.Empty;
+                }
+            }
+
+            return "diagnostic expectations did not match current console diagnostics.";
+        }
+
+        private static bool IsSupportedDiagnosticCategory(string category)
+        {
+            switch (category)
+            {
+                case "compiler_error":
+                case "runtime_exception":
+                case "import_error":
+                case "warning":
+                case "unknown":
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static string TryReadLine(string absolutePath, int targetLine, out string[] lines, out string lineEnding, out string currentLine)
+        {
+            lines = Array.Empty<string>();
+            lineEnding = "\n";
+            currentLine = string.Empty;
+
+            if (!File.Exists(absolutePath))
+            {
+                return "targetFile does not exist.";
+            }
+
+            var text = File.ReadAllText(absolutePath);
+            lineEnding = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+            lines = text.Split(new[] { lineEnding }, StringSplitOptions.None);
+
+            if (targetLine > lines.Length || (targetLine == lines.Length && lines[targetLine - 1].Length == 0 && text.EndsWith(lineEnding, StringComparison.Ordinal)))
+            {
+                return "targetLine is outside the file.";
+            }
+
+            currentLine = lines[targetLine - 1];
+            return string.Empty;
+        }
+
+        private static string CreateCheckpoint(string absolutePath, string targetFile)
+        {
+            var checkpointRelativeDirectory = "UnityAIArtifacts/Checkpoints";
+            var timestamp = DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffZ");
+            var checkpointName = Regex.Replace(targetFile, @"[^A-Za-z0-9_.-]+", "_");
+            var checkpointRelativePath = $"{checkpointRelativeDirectory}/{timestamp}_{checkpointName}.bak";
+            var checkpointAbsolutePath = Path.Combine(GetProjectRoot(), checkpointRelativePath);
+            var checkpointDirectory = Path.GetDirectoryName(checkpointAbsolutePath);
+
+            if (!string.IsNullOrWhiteSpace(checkpointDirectory))
+            {
+                Directory.CreateDirectory(checkpointDirectory);
+            }
+
+            File.Copy(absolutePath, checkpointAbsolutePath, false);
+            return checkpointRelativePath;
+        }
+
+        private static bool VerifyLine(string absolutePath, int targetLine, string replacementLine)
+        {
+            var readError = TryReadLine(absolutePath, targetLine, out _, out _, out var currentLine);
+            return string.IsNullOrWhiteSpace(readError) && string.Equals(currentLine, replacementLine, StringComparison.Ordinal);
+        }
+
+        private static bool DetectUtf8WithBom(string absolutePath)
+        {
+            var bytes = File.ReadAllBytes(absolutePath);
+            return bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+        }
+
+        private static bool ContainsLineBreak(string value)
+        {
+            return (value ?? string.Empty).Contains("\n", StringComparison.Ordinal) || (value ?? string.Empty).Contains("\r", StringComparison.Ordinal);
+        }
+
+        private static bool PersistAudit(UnityAiAuditEvent[] auditEvents)
+        {
+            try
+            {
+                AuditLogStore.Append(auditEvents);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError($"Failed to persist Unity AI audit event: {exception.Message}");
+                return false;
+            }
+        }
+
+        private static UnityAiAuditEvent CreateApplyFixAuditEvent(string timestamp, UnityAiRequestEnvelope envelope, string message, string[] effects, bool includeAuditPersistenceEffect)
+        {
+            var auditEffects = effects ?? Array.Empty<string>();
+            if (includeAuditPersistenceEffect)
+            {
+                var withAudit = new string[auditEffects.Length + 1];
+                Array.Copy(auditEffects, withAudit, auditEffects.Length);
+                withAudit[withAudit.Length - 1] = "write_audit_log";
+                auditEffects = withAudit;
+            }
+
+            return new UnityAiAuditEvent
+            {
+                timestamp = timestamp,
+                capability = "unity.console.apply_fix",
+                requestId = envelope.requestId,
+                correlationId = envelope.correlationId,
+                message = message,
+                effects = auditEffects
+            };
+        }
+
+        private static UnityAiRequestEnvelope ParseEnvelope(string requestBody)
+        {
+            if (string.IsNullOrWhiteSpace(requestBody))
+            {
+                return new UnityAiRequestEnvelope();
+            }
+
+            try
+            {
+                return JsonUtility.FromJson<UnityAiRequestEnvelope>(requestBody) ?? new UnityAiRequestEnvelope();
+            }
+            catch
+            {
+                return new UnityAiRequestEnvelope();
+            }
+        }
+
+        private static ConsoleApplyFixRequest ParseApplyFixRequest(string requestBody)
+        {
+            if (string.IsNullOrWhiteSpace(requestBody))
+            {
+                return new ConsoleApplyFixRequest();
+            }
+
+            try
+            {
+                return JsonUtility.FromJson<ConsoleApplyFixRequest>(requestBody) ?? new ConsoleApplyFixRequest();
+            }
+            catch
+            {
+                return new ConsoleApplyFixRequest();
+            }
         }
 
         private static void OnLogMessageReceived(string condition, string stackTrace, LogType type)

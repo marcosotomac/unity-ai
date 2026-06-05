@@ -30,6 +30,13 @@ export const initialCapabilities: CapabilityManifest[] = [
     verification: ["console_diagnostics", "fix_plan_generated"]
   },
   {
+    name: "unity.console.apply_fix",
+    description: "Apply a confirmed, checkpointed one-line replacement to a C# script under Assets.",
+    permissions: ["read_console", "read_project", "modify_assets"],
+    effects: ["report_only", "write_audit_log", "write_checkpoint", "asset_change"],
+    verification: ["operation_audited", "checkpoint_created", "line_replacement_verified"]
+  },
+  {
     name: "unity.assets.list",
     description: "List Unity project assets with paths, GUIDs, and main asset types.",
     permissions: ["read_project", "read_assets"],

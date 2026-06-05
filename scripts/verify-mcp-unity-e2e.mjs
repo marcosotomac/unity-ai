@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { existsSync, rmSync, writeFileSync, mkdirSync, cpSync, readFileSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync, mkdirSync, cpSync, readFileSync, symlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -24,6 +24,9 @@ const logPath = join(artifactsDir, "mcp-unity-e2e.log");
 const diagnosticWarningMarker = "UNITY_AI_E2E_DIAGNOSTIC_WARNING";
 const diagnosticErrorMarker = "UNITY_AI_E2E_DIAGNOSTIC_ERROR";
 const diagnosticExceptionMarker = "UNITY_AI_E2E_DIAGNOSTIC_EXCEPTION";
+const applyFixFile = "Assets/UnityAiE2EApplyFixFixture.cs";
+const applyFixOriginalLine = "    public const string Marker = \"before\";";
+const applyFixReplacementLine = "    public const string Marker = \"after\";";
 
 if (!unityPath || !existsSync(unityPath)) {
   fail(`Unity executable not found. Set UNITY_PATH or pass it as the first argument.`);
@@ -62,6 +65,14 @@ writeFileSync(
 );
 
 writeFileSync(join(projectSettingsDir, "ProjectVersion.txt"), "m_EditorVersion: 6000.4.9f1\n");
+writeFileSync(
+  join(tempProject, applyFixFile),
+  `public static class UnityAiE2EApplyFixFixture
+{
+${applyFixOriginalLine}
+}
+`
+);
 writeFileSync(
   join(assetsDir, "Editor/UnityAiE2EConsoleDiagnosticsFixture.cs"),
   `using System;
@@ -123,6 +134,7 @@ try {
   await client.connect(transport);
 
   assertCapabilities(await callJsonTool(client, "unity.capabilities.list", {}));
+  await assertApplyFixFlow(client);
   const before = await callJsonTool(client, "unity.project.inspect", {});
   await callJsonTool(client, "unity.console.read", {});
   assertConsoleDiagnostics(await waitForConsoleDiagnostics(client, 60_000));
@@ -320,6 +332,23 @@ function assertCapabilities(capabilities) {
   if (!Array.isArray(fixPlanCapability.verification) || !fixPlanCapability.verification.includes("fix_plan_generated")) {
     fail("unity.console.plan_fix capability must declare fix_plan_generated verification.");
   }
+
+  const applyFixCapability = capabilities.find((capability) => capability.name === "unity.console.apply_fix");
+  if (!applyFixCapability) {
+    fail("unity.capabilities.list did not include unity.console.apply_fix.");
+  }
+
+  if (!Array.isArray(applyFixCapability.permissions) || !applyFixCapability.permissions.includes("modify_assets")) {
+    fail("unity.console.apply_fix capability must declare modify_assets permission.");
+  }
+
+  if (!Array.isArray(applyFixCapability.effects) || !applyFixCapability.effects.includes("write_checkpoint") || !applyFixCapability.effects.includes("asset_change")) {
+    fail("unity.console.apply_fix capability must declare checkpoint and asset change effects.");
+  }
+
+  if (!Array.isArray(applyFixCapability.verification) || !applyFixCapability.verification.includes("line_replacement_verified")) {
+    fail("unity.console.apply_fix capability must declare line_replacement_verified verification.");
+  }
 }
 
 function getTextContent(toolName, result) {
@@ -457,6 +486,225 @@ function assertUndoResult(label, result, expected) {
     ...expected,
     capability: "unity.editor.undo_last_operation"
   });
+}
+
+async function assertApplyFixFlow(client) {
+  const targetLine = findLineNumber(join(tempProject, applyFixFile), applyFixOriginalLine);
+
+  await assertApplyFixRefused(client, "embedded Assets path", {
+    targetFile: `foo/${applyFixFile}`,
+    targetLine,
+    expectedOriginalLine: applyFixOriginalLine,
+    replacementLine: applyFixReplacementLine
+  });
+
+  await assertApplyFixRefused(client, "absolute path", {
+    targetFile: join(tempProject, applyFixFile),
+    targetLine,
+    expectedOriginalLine: applyFixOriginalLine,
+    replacementLine: applyFixReplacementLine
+  });
+
+  await assertApplyFixRefused(client, "parent traversal", {
+    targetFile: "Assets/../ProjectSettings/ProjectVersion.txt",
+    targetLine: 1,
+    expectedOriginalLine: "x",
+    replacementLine: "y"
+  });
+
+  await assertApplyFixRefused(client, "non C# asset", {
+    targetFile: "Assets/not-code.txt",
+    targetLine: 1,
+    expectedOriginalLine: "x",
+    replacementLine: "y"
+  });
+
+  await assertApplyFixRefused(client, "multiline replacement", {
+    targetFile: applyFixFile,
+    targetLine,
+    expectedOriginalLine: applyFixOriginalLine,
+    replacementLine: `${applyFixReplacementLine}\n// second line`
+  });
+
+  await assertApplyFixRefused(client, "line mismatch", {
+    targetFile: applyFixFile,
+    targetLine,
+    expectedOriginalLine: "    public const string Marker = \"wrong\";",
+    replacementLine: applyFixReplacementLine
+  });
+
+  const symlinkTarget = join(tempProject, "UnityAiSymlinkEscapeTarget.cs");
+  const symlinkFile = join(tempProject, "Assets/UnityAiSymlinkEscape.cs");
+  writeFileSync(symlinkTarget, `${applyFixOriginalLine}\n`, "utf8");
+  rmSync(symlinkFile, { force: true });
+  symlinkSync(symlinkTarget, symlinkFile);
+  await assertApplyFixRefused(client, "symlink escape", {
+    dryRun: false,
+    confirm: true,
+    targetFile: "Assets/UnityAiSymlinkEscape.cs",
+    targetLine: 1,
+    expectedOriginalLine: applyFixOriginalLine,
+    replacementLine: applyFixReplacementLine
+  });
+  assertFileContainsLine("symlink escape", symlinkTarget, applyFixOriginalLine);
+  rmSync(symlinkFile, { force: true });
+  rmSync(symlinkTarget, { force: true });
+
+  const dryRun = await callJsonTool(client, "unity.console.apply_fix", {
+    targetFile: applyFixFile,
+    targetLine,
+    expectedOriginalLine: applyFixOriginalLine,
+    replacementLine: applyFixReplacementLine
+  });
+  assertApplyFixResult("dry-run apply_fix", dryRun, {
+    dryRun: true,
+    applied: false,
+    effects: ["report_only", "write_audit_log"],
+    requiredSignals: ["operation_audited", "structured_observation"],
+    forbiddenSignals: ["checkpoint_created", "line_replacement_verified"],
+    verificationStatus: "passed",
+    requiresConfirmation: false,
+    checkpointCreated: false
+  });
+  assertFileContainsLine("dry-run apply_fix", join(tempProject, applyFixFile), applyFixOriginalLine);
+
+  const needsConfirmation = await callJsonTool(client, "unity.console.apply_fix", {
+    dryRun: false,
+    confirm: false,
+    targetFile: applyFixFile,
+    targetLine,
+    expectedOriginalLine: applyFixOriginalLine,
+    replacementLine: applyFixReplacementLine
+  });
+  assertApplyFixResult("confirmation gate apply_fix", needsConfirmation, {
+    dryRun: false,
+    applied: false,
+    effects: ["report_only", "write_audit_log"],
+    requiredSignals: ["operation_audited", "structured_observation"],
+    forbiddenSignals: ["checkpoint_created", "line_replacement_verified"],
+    verificationStatus: "needs_confirmation",
+    requiresConfirmation: true,
+    checkpointCreated: false
+  });
+  assertFileContainsLine("confirmation gate apply_fix", join(tempProject, applyFixFile), applyFixOriginalLine);
+
+  const applied = await callJsonTool(client, "unity.console.apply_fix", {
+    dryRun: false,
+    confirm: true,
+    targetFile: applyFixFile,
+    targetLine,
+    expectedOriginalLine: applyFixOriginalLine,
+    replacementLine: applyFixReplacementLine
+  });
+  assertApplyFixResult("real apply_fix", applied, {
+    dryRun: false,
+    applied: true,
+    effects: ["asset_change", "write_checkpoint", "write_audit_log"],
+    requiredSignals: ["operation_audited", "structured_observation", "checkpoint_created", "line_replacement_verified"],
+    forbiddenSignals: [],
+    verificationStatus: "passed",
+    requiresConfirmation: false,
+    checkpointCreated: true
+  });
+  assertFileContainsLine("real apply_fix", join(tempProject, applyFixFile), applyFixReplacementLine);
+}
+
+async function assertApplyFixRefused(client, label, input) {
+  const result = await callJsonTool(client, "unity.console.apply_fix", input);
+  if (result.applied !== false || result.refused !== true || result.verificationStatus !== "refused") {
+    fail(`${label}: expected apply_fix refusal, got ${JSON.stringify(result)}.`);
+  }
+
+  assertNoAbsolutePathLeakInValue(label, result);
+
+  if (result.checkpointCreated || result.checkpointPath) {
+    fail(`${label}: refused apply_fix must not create a checkpoint.`);
+  }
+
+  if (!Array.isArray(result.auditEvents) || result.auditEvents.length !== 1 || result.auditEvents[0].capability !== "unity.console.apply_fix") {
+    fail(`${label}: refused apply_fix must return one structured audit event.`);
+  }
+}
+
+function assertApplyFixResult(label, result, expected) {
+  if (result.dryRun !== expected.dryRun || result.applied !== expected.applied) {
+    fail(`${label}: expected dryRun=${expected.dryRun} applied=${expected.applied}, got dryRun=${result.dryRun} applied=${result.applied}.`);
+  }
+
+  if (result.targetFile !== applyFixFile || typeof result.targetLine !== "number") {
+    fail(`${label}: expected relative target file and numeric line.`);
+  }
+
+  assertNoAbsolutePathLeakInValue(label, result);
+
+  if (!Array.isArray(result.auditEvents) || result.auditEvents.length !== 1) {
+    fail(`${label}: expected exactly one structured audit event.`);
+  }
+
+  const [auditEvent] = result.auditEvents;
+  if (auditEvent.capability !== "unity.console.apply_fix") {
+    fail(`${label}: expected audit event capability unity.console.apply_fix, got ${auditEvent.capability}.`);
+  }
+
+  if (JSON.stringify(auditEvent.effects) !== JSON.stringify(expected.effects)) {
+    fail(`${label}: expected audit effects ${JSON.stringify(expected.effects)}, got ${JSON.stringify(auditEvent.effects)}.`);
+  }
+
+  if (auditEvent.requestId !== result.requestId || auditEvent.correlationId !== result.correlationId) {
+    fail(`${label}: expected audit request/correlation ids to match result.`);
+  }
+
+  if (result.verificationStatus !== expected.verificationStatus || result.requiresConfirmation !== expected.requiresConfirmation) {
+    fail(`${label}: expected status ${expected.verificationStatus} requiresConfirmation=${expected.requiresConfirmation}, got ${result.verificationStatus} requiresConfirmation=${result.requiresConfirmation}.`);
+  }
+
+  if (result.checkpointCreated !== expected.checkpointCreated) {
+    fail(`${label}: expected checkpointCreated=${expected.checkpointCreated}, got ${result.checkpointCreated}.`);
+  }
+
+  if (expected.checkpointCreated) {
+    if (typeof result.checkpointPath !== "string" || result.checkpointPath.startsWith("/") || !existsSync(join(tempProject, result.checkpointPath))) {
+      fail(`${label}: expected relative checkpointPath to exist, got ${result.checkpointPath}.`);
+    }
+  }
+
+  if (!Array.isArray(result.requiredPermissions) || !result.requiredPermissions.includes("modify_assets")) {
+    fail(`${label}: expected requiredPermissions to include modify_assets.`);
+  }
+
+  if (result.auditPersisted !== true || typeof result.auditLogPath !== "string" || result.auditLogPath.startsWith("/")) {
+    fail(`${label}: expected persisted relative audit log path.`);
+  }
+
+  assertAuditLogContains(label, join(tempProject, result.auditLogPath), auditEvent);
+
+  for (const signal of expected.requiredSignals) {
+    if (!result.verificationSignals.includes(signal)) {
+      fail(`${label}: expected verificationSignals to include ${signal}.`);
+    }
+  }
+
+  for (const signal of expected.forbiddenSignals) {
+    if (result.verificationSignals.includes(signal)) {
+      fail(`${label}: did not expect verificationSignals to include ${signal}.`);
+    }
+  }
+}
+
+function findLineNumber(path, expectedLine) {
+  const lines = readFileSync(path, "utf8").split(/\r?\n/);
+  const index = lines.findIndex((line) => line === expectedLine);
+  if (index < 0) {
+    fail(`Could not find apply_fix fixture line: ${expectedLine}`);
+  }
+
+  return index + 1;
+}
+
+function assertFileContainsLine(label, path, expectedLine) {
+  if (!readFileSync(path, "utf8").split(/\r?\n/).includes(expectedLine)) {
+    fail(`${label}: expected file to contain ${expectedLine}`);
+  }
 }
 
 function assertAssetList(report) {
@@ -944,6 +1192,18 @@ async function assertMutatingRouteRequiresToken(url) {
   }
 
   console.log("✓ unity.editor.create_empty_game_object rejects missing token");
+
+  const applyFixResponse = await fetch(`${url}/capabilities/${encodeURIComponent("unity.console.apply_fix")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ input: { targetFile: applyFixFile, targetLine: 1, expectedOriginalLine: "x", replacementLine: "y" } })
+  });
+
+  if (applyFixResponse.status !== 403) {
+    fail(`Expected unity.console.apply_fix without token to return 403, got HTTP ${applyFixResponse.status}.`);
+  }
+
+  console.log("✓ unity.console.apply_fix rejects missing token");
 }
 
 function delay(ms) {

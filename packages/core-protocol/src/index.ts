@@ -21,6 +21,7 @@ export type CapabilityEffect =
   | "report_only"
   | "write_artifacts"
   | "write_audit_log"
+  | "write_checkpoint"
   | "scene_change"
   | "asset_change"
   | "code_change"
@@ -41,6 +42,8 @@ export type VerificationSignal =
   | "tests_passed"
   | "build_validated"
   | "operation_audited"
+  | "checkpoint_created"
+  | "line_replacement_verified"
   | "scene_mutation_verified"
   | "rollback_verified";
 

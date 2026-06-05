@@ -222,6 +222,8 @@ namespace UnityAI.ControlPlane.Editor
                     return JsonResult(capability, envelope, ConsoleLogBridge.Diagnose());
                 case "unity.console.plan_fix":
                     return JsonResult(capability, envelope, ConsoleLogBridge.PlanFix());
+                case "unity.console.apply_fix":
+                    return JsonResult(capability, envelope, ConsoleLogBridge.ApplyFix(requestBody));
                 case "unity.assets.list":
                     return JsonResult(capability, envelope, AssetListObserver.ListAssets(requestBody));
                 case "unity.scenes.list":
@@ -321,7 +323,15 @@ namespace UnityAI.ControlPlane.Editor
 
         private static bool IsMutatingCapability(string capability)
         {
-            return capability.StartsWith("unity.editor.", StringComparison.Ordinal);
+            switch (capability)
+            {
+                case "unity.console.apply_fix":
+                case "unity.editor.create_empty_game_object":
+                case "unity.editor.undo_last_operation":
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         private static bool IsAuthorized(HttpListenerRequest request)
