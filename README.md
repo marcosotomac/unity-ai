@@ -132,6 +132,33 @@ Success criteria:
 - The agent can verify that the project improved after the change.
 - All actions are auditable and safe enough for real project usage.
 
+## Quickstart: automatic setup
+
+Run the setup script from this repository to install the Unity package into a local Unity project and/or configure opencode to start the MCP server.
+
+Dry run first:
+
+```bash
+npm run setup:user -- --unity-project /path/to/UnityProject --opencode
+```
+
+Apply the changes:
+
+```bash
+npm run setup:user -- --unity-project /path/to/UnityProject --opencode --build --write
+```
+
+What it changes:
+
+- Adds or updates `Packages/manifest.json` in the target Unity project with a local `file:` dependency to this repo's Unity package.
+- Adds or updates `mcp.unity-ai` in `~/.config/opencode/opencode.json` using an absolute path to `apps/mcp-server/dist/index.js`.
+- Creates `.bak-YYYYMMDDHHmmss` backups next to files before writing.
+- Generates and prints a local bridge token when applying with `--write --opencode` without `--bridge-token`; use that same token when starting the Unity local bridge.
+
+After changing opencode config, restart opencode so it reloads `~/.config/opencode/opencode.json`.
+
+See `docs/setup.md` for focused setup details and examples.
+
 ## Development
 
 Requirements:

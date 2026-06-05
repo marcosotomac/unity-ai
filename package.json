@@ -27,6 +27,7 @@
   ],
   "scripts": {
     "build": "tsc -b",
+    "setup:user": "node scripts/setup-user.mjs",
     "typecheck": "tsc -b",
     "verify:unity-package": "node scripts/verify-unity-package.mjs",
     "verify:mcp-unity-e2e": "npm run build && node scripts/verify-mcp-unity-e2e.mjs"
