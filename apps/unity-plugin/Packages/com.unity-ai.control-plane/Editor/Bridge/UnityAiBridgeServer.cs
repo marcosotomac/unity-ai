@@ -136,17 +136,6 @@ namespace UnityAI.ControlPlane.Editor
                 return;
             }
 
-            if (context.Request.HttpMethod != "POST")
-            {
-                await WriteResponse(context, 405, new BridgeResponse
-                {
-                    ok = false,
-                    capability = string.Empty,
-                    error = "Only POST requests are supported."
-                });
-                return;
-            }
-
             var capability = ExtractCapability(context.Request.Url?.AbsolutePath ?? string.Empty);
 
             if (string.IsNullOrWhiteSpace(capability))
@@ -169,6 +158,17 @@ namespace UnityAI.ControlPlane.Editor
                     error = string.IsNullOrWhiteSpace(_bridgeToken)
                         ? "Mutating capabilities require a bridge token. Start the bridge with a token."
                         : "Invalid or missing bridge token for mutating capability."
+                });
+                return;
+            }
+
+            if (context.Request.HttpMethod != "POST")
+            {
+                await WriteResponse(context, 405, new BridgeResponse
+                {
+                    ok = false,
+                    capability = capability,
+                    error = "Only POST requests are supported."
                 });
                 return;
             }
