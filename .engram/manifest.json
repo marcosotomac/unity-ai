@@ -16,6 +16,14 @@
       "sessions": 1,
       "memories": 26,
       "prompts": 31
+    },
+    {
+      "id": "7cf5f64d",
+      "created_by": "marcosotomaceda",
+      "created_at": "2026-06-06T23:05:16Z",
+      "sessions": 0,
+      "memories": 1,
+      "prompts": 2
     }
   ]
 }
