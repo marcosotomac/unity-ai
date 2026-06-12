@@ -9,6 +9,13 @@ export const initialCapabilities: CapabilityManifest[] = [
     verification: ["structured_observation"]
   },
   {
+    name: "unity.project.snapshot",
+    description: "Capture a compact, sanitized, read-only project context pack for planning next actions.",
+    permissions: ["read_project", "read_project_settings", "read_packages", "read_scenes", "read_assets", "read_console"],
+    effects: ["report_only"],
+    verification: ["structured_observation", "console_snapshot", "console_diagnostics"]
+  },
+  {
     name: "unity.console.read",
     description: "Read Unity Console messages and summarize errors, warnings, and logs.",
     permissions: ["read_console"],

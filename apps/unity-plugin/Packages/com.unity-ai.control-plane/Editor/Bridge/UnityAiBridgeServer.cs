@@ -216,6 +216,8 @@ namespace UnityAI.ControlPlane.Editor
             {
                 case "unity.project.inspect":
                     return JsonResult(capability, envelope, ProjectInspector.InspectActiveProject());
+                case "unity.project.snapshot":
+                    return JsonResult(capability, envelope, ProjectSnapshotObserver.Capture());
                 case "unity.console.read":
                     return JsonResult(capability, envelope, ConsoleLogBridge.GetSummary());
                 case "unity.console.diagnose":

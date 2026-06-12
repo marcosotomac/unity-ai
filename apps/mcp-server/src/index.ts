@@ -42,6 +42,15 @@ server.registerTool(
 );
 
 server.registerTool(
+  "unity.project.snapshot",
+  {
+    description: "Capture a compact, sanitized, read-only Unity project context snapshot for planning next actions.",
+    inputSchema: z.object({})
+  },
+  async () => bridgeTool("unity.project.snapshot")
+);
+
+server.registerTool(
   "unity.console.read",
   {
     description: "Read Unity Console summary and recent log entries through the local Unity Editor bridge.",

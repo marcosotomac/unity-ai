@@ -139,6 +139,7 @@ try {
   await callJsonTool(client, "unity.console.read", {});
   assertConsoleDiagnostics(await waitForConsoleDiagnostics(client, 60_000));
   assertConsoleFixPlans(await callJsonTool(client, "unity.console.plan_fix", {}));
+  assertProjectSnapshot(await callJsonTool(client, "unity.project.snapshot", {}));
   assertAssetList(await callJsonTool(client, "unity.assets.list", { folder: "Assets", maxResults: 50 }));
   assertSceneList(await callJsonTool(client, "unity.scenes.list", {}));
   assertSceneInspect(await callJsonTool(client, "unity.scene.inspect", { includeComponents: true, maxDepth: 3, maxGameObjects: 50 }));
@@ -336,6 +337,23 @@ function assertCapabilities(capabilities) {
   const applyFixCapability = capabilities.find((capability) => capability.name === "unity.console.apply_fix");
   if (!applyFixCapability) {
     fail("unity.capabilities.list did not include unity.console.apply_fix.");
+  }
+
+  const snapshotCapability = capabilities.find((capability) => capability.name === "unity.project.snapshot");
+  if (!snapshotCapability) {
+    fail("unity.capabilities.list did not include unity.project.snapshot.");
+  }
+
+  if (!Array.isArray(snapshotCapability.permissions) || !snapshotCapability.permissions.includes("read_project") || !snapshotCapability.permissions.includes("read_console")) {
+    fail("unity.project.snapshot capability must declare read_project and read_console permissions.");
+  }
+
+  if (!Array.isArray(snapshotCapability.effects) || JSON.stringify(snapshotCapability.effects) !== JSON.stringify(["report_only"])) {
+    fail("unity.project.snapshot capability must remain report_only.");
+  }
+
+  if (!Array.isArray(snapshotCapability.verification) || !snapshotCapability.verification.includes("structured_observation") || !snapshotCapability.verification.includes("console_diagnostics")) {
+    fail("unity.project.snapshot capability must declare observation and console diagnostic verification.");
   }
 
   if (!Array.isArray(applyFixCapability.permissions) || !applyFixCapability.permissions.includes("modify_assets")) {
@@ -839,6 +857,78 @@ function assertProjectSettings(report) {
   if (typeof report.activeBuildTarget !== "string" || typeof report.activeBuildTargetGroup !== "string" || typeof report.colorSpace !== "string") {
     fail("unity.project.settings.inspect returned an invalid settings shape.");
   }
+}
+
+function assertProjectSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") {
+    fail("unity.project.snapshot returned an invalid snapshot shape.");
+  }
+
+  if (!snapshot.identity || snapshot.identity.projectRoot !== "[project-root]" || snapshot.identity.dataPath !== "Assets" || typeof snapshot.identity.projectName !== "string" || typeof snapshot.identity.unityVersion !== "string" || Number.isNaN(Date.parse(snapshot.identity.capturedAtUtc))) {
+    fail(`unity.project.snapshot returned invalid sanitized identity: ${JSON.stringify(snapshot.identity)}.`);
+  }
+
+  if (!snapshot.console || typeof snapshot.console.errorCount !== "number" || typeof snapshot.console.warningCount !== "number" || typeof snapshot.console.diagnosticCount !== "number" || !Array.isArray(snapshot.console.topDiagnostics)) {
+    fail("unity.project.snapshot returned an invalid console summary.");
+  }
+
+  if (snapshot.console.topDiagnostics.length > 5) {
+    fail(`unity.project.snapshot returned too many diagnostics: ${snapshot.console.topDiagnostics.length}.`);
+  }
+
+  if (snapshot.console.diagnosticCount === 0 || snapshot.console.errorCount === 0) {
+    fail(`unity.project.snapshot did not reflect deterministic console diagnostics: ${JSON.stringify(snapshot.console)}.`);
+  }
+
+  if (!snapshot.scenes || typeof snapshot.scenes.totalFound !== "number" || typeof snapshot.scenes.buildSettingsCount !== "number" || !Array.isArray(snapshot.scenes.mainScenes)) {
+    fail("unity.project.snapshot returned an invalid scene summary.");
+  }
+
+  if (snapshot.scenes.mainScenes.length > 10) {
+    fail(`unity.project.snapshot returned too many scenes: ${snapshot.scenes.mainScenes.length}.`);
+  }
+
+  if (!snapshot.prefabs || typeof snapshot.prefabs.totalFound !== "number" || !Array.isArray(snapshot.prefabs.importantPrefabs) || snapshot.prefabs.importantPrefabs.length > 10) {
+    fail("unity.project.snapshot returned an invalid bounded prefab summary.");
+  }
+
+  if (!snapshot.scripts || typeof snapshot.scripts.totalFound !== "number" || !Array.isArray(snapshot.scripts.importantScripts) || snapshot.scripts.importantScripts.length > 12) {
+    fail("unity.project.snapshot returned an invalid bounded scripts summary.");
+  }
+
+  if (!snapshot.assemblies || typeof snapshot.assemblies.totalFound !== "number" || !Array.isArray(snapshot.assemblies.assemblies) || snapshot.assemblies.assemblies.length > 20) {
+    fail("unity.project.snapshot returned an invalid bounded assemblies summary.");
+  }
+
+  if (!snapshot.packages || typeof snapshot.packages.totalFound !== "number" || !Array.isArray(snapshot.packages.packages) || snapshot.packages.packages.length > 20) {
+    fail("unity.project.snapshot returned an invalid bounded packages summary.");
+  }
+
+  if (!snapshot.metaXr || typeof snapshot.metaXr.likelyMetaXrInstalled !== "boolean" || !Array.isArray(snapshot.metaXr.findings) || snapshot.metaXr.findings.length > 10) {
+    fail("unity.project.snapshot returned an invalid Meta XR summary.");
+  }
+
+  if (!snapshot.artifacts || snapshot.artifacts.auditLogPath !== "UnityAIArtifacts/Audit/events.jsonl" || snapshot.artifacts.checkpointsPath !== "UnityAIArtifacts/Checkpoints" || typeof snapshot.artifacts.auditEventCount !== "number" || typeof snapshot.artifacts.checkpointCount !== "number") {
+    fail("unity.project.snapshot returned an invalid sanitized artifact summary.");
+  }
+
+  if (!Array.isArray(snapshot.capabilities) || !snapshot.capabilities.some((capability) => capability.name === "unity.project.snapshot" && capability.effect === "read")) {
+    fail("unity.project.snapshot did not include a useful capability summary.");
+  }
+
+  if (!Array.isArray(snapshot.riskFlags) || !snapshot.riskFlags.includes("compiler_errors_present") || !snapshot.riskFlags.includes("missing_bridge_token_not_relevant")) {
+    fail(`unity.project.snapshot did not include expected risk flags: ${JSON.stringify(snapshot.riskFlags)}.`);
+  }
+
+  if (!Array.isArray(snapshot.recommendedNextActions) || !snapshot.recommendedNextActions.includes("run unity.console.diagnose")) {
+    fail(`unity.project.snapshot did not include fact-based recommended actions: ${JSON.stringify(snapshot.recommendedNextActions)}.`);
+  }
+
+  if (!Array.isArray(snapshot.verificationSignals) || !snapshot.verificationSignals.includes("structured_observation") || !snapshot.verificationSignals.includes("console_diagnostics")) {
+    fail(`unity.project.snapshot did not include expected verification signals: ${JSON.stringify(snapshot.verificationSignals)}.`);
+  }
+
+  assertNoAbsolutePathLeakInValue("snapshot", snapshot);
 }
 
 async function waitForConsoleDiagnostics(client, timeoutMs) {
