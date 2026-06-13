@@ -379,6 +379,9 @@ namespace UnityAI.ControlPlane.Editor
                 Capability("unity.assets.list", "read"),
                 Capability("unity.scenes.list", "read"),
                 Capability("unity.scene.inspect", "read"),
+                Capability("unity.scene.inspect_game_object", "read"),
+                Capability("unity.scene.upsert_game_object", "mutating_token_required"),
+                Capability("unity.scene.batch", "mutating_token_required"),
                 Capability("unity.prefabs.list", "read"),
                 Capability("unity.prefab.inspect", "read"),
                 Capability("unity.asset.dependencies", "read"),
@@ -387,6 +390,7 @@ namespace UnityAI.ControlPlane.Editor
                 Capability("unity.packages.list", "read"),
                 Capability("unity.project.settings.inspect", "read"),
                 Capability("unity.vision.capture", "writes_artifact"),
+                Capability("unity.vision.compare", "writes_artifact"),
                 Capability("unity.meta_xr.validate_setup", "read"),
                 Capability("unity.editor.create_empty_game_object", "mutating_token_required"),
                 Capability("unity.editor.undo_last_operation", "mutating_token_required")
