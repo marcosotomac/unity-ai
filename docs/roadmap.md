@@ -17,7 +17,9 @@
 - [x] Route `unity.console.read` from MCP to Unity.
 - [x] Route `unity.vision.capture` from MCP to Unity.
 - [x] Return structured unavailable states for missing Scene View contexts.
-- [ ] Add screenshot artifact readiness checks before reporting capture success.
+- [x] Add screenshot artifact readiness checks before reporting capture success.
+- [x] Add before/after image comparison with configurable thresholds.
+- [x] Add diff artifacts and machine-readable visual regression decisions.
 - [x] Test MCP tool calls against a running Unity Editor instance.
 
 Verified tools:
@@ -45,10 +47,10 @@ Verified tools:
 - [x] Add request/correlation IDs to act and rollback audit events.
 - [x] Add structured Unity Console diagnostics for compiler/runtime/import/warning categories.
 - [x] Propose conservative read-only fix plans from Unity Console diagnostics.
-- [ ] Detect a simple Unity compiler or runtime error in a purpose-built fixture.
+- [x] Detect a simple Unity compiler or runtime error in a purpose-built fixture.
 - [x] Propose a safe fix plan.
-- [ ] Apply one controlled Editor-side change.
-- [ ] Recompile and verify console state.
+- [x] Apply one controlled Editor-side change.
+- [x] Recompile and verify console state.
 - [ ] Produce an audit report with before/after evidence.
 
 ## Milestone 3.5 — Real project observability
@@ -56,6 +58,8 @@ Verified tools:
 - [x] Add `unity.assets.list`.
 - [x] Add `unity.scenes.list`.
 - [x] Add `unity.scene.inspect`.
+- [x] Add `unity.scene.inspect_game_object` with bounded serialized component properties.
+- [x] Add atomic `unity.scene.batch` hierarchy, prefab, component, and property operations.
 - [x] Add `unity.packages.list`.
 - [x] Add `unity.project.settings.inspect`.
 - [x] Add `unity.asset.dependencies`.
@@ -65,9 +69,24 @@ Verified tools:
 - [x] Add `unity.assemblies.list`.
 - [ ] Add material/shader/audio/texture-specific inspection.
 - [ ] Add prefab variant/override inspection.
+- [x] Add prefab asset authoring and override application/revert operations.
+- [x] Add material/shader/audio and animation mutation helpers.
 
 ## Milestone 4 — Meta XR readiness
 
-- [ ] Validate Android build target, OpenXR, Meta XR packages, rig setup, permissions, and Quest-specific settings.
+- [x] Validate Android build target, OpenXR/Meta OpenXR packages, loader/features, and Quest build settings.
+- [x] Configure XR packages, Android target, IL2CPP, ARM64, SDK minimum, OpenXR loader, and Meta features.
+- [x] Validate and execute Android APK/AAB build jobs.
 - [ ] Add actionable fix plans for common Meta XR project issues.
-- [ ] Add screenshot-based visual verification for XR scene setup.
+- [ ] Add XR-specific screenshot baselines and visual assertions.
+
+## Milestone 5 — Operational control
+
+- [x] Persistent job store with get/list/cancel.
+- [x] Edit Mode and Play Mode test execution with XML artifacts.
+- [x] Enter, exit, pause, resume, and step Play Mode.
+- [x] Wait for recompilation/import and verify console errors.
+- [x] Durable hashed checkpoints beyond Unity Undo.
+- [x] Package and Project/Build Settings mutation.
+- [ ] Uniform persisted audit events for every new mutation family.
+- [ ] Real Quest hardware/install/launch smoke testing.
