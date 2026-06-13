@@ -25,8 +25,19 @@ namespace UnityAI.ControlPlane.Editor
         public string name;
         public string path;
         public bool activeSelf;
+        public SceneVector3 position;
+        public SceneVector3 rotationEuler;
+        public SceneVector3 scale;
         public int childCount;
         public string[] components;
+    }
+
+    [Serializable]
+    public sealed class SceneVector3
+    {
+        public float x;
+        public float y;
+        public float z;
     }
 
     [Serializable]
@@ -98,6 +109,9 @@ namespace UnityAI.ControlPlane.Editor
                 name = gameObject.name,
                 path = path,
                 activeSelf = gameObject.activeSelf,
+                position = ToSceneVector3(gameObject.transform.localPosition),
+                rotationEuler = ToSceneVector3(gameObject.transform.localEulerAngles),
+                scale = ToSceneVector3(gameObject.transform.localScale),
                 childCount = gameObject.transform.childCount,
                 components = includeComponents ? GetComponentNames(gameObject) : Array.Empty<string>()
             });
@@ -130,6 +144,16 @@ namespace UnityAI.ControlPlane.Editor
             }
 
             return names;
+        }
+
+        private static SceneVector3 ToSceneVector3(Vector3 value)
+        {
+            return new SceneVector3
+            {
+                x = value.x,
+                y = value.y,
+                z = value.z
+            };
         }
 
         private static SceneInspectRequest ParseRequest(string requestBody)
