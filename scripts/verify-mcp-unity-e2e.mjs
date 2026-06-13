@@ -43,8 +43,16 @@ if (clean) {
 mkdirSync(packagesDir, { recursive: true });
 mkdirSync(assetsDir, { recursive: true });
 mkdirSync(join(assetsDir, "Editor"), { recursive: true });
+mkdirSync(join(assetsDir, "Tests/EditMode"), { recursive: true });
+mkdirSync(join(assetsDir, "Tests/PlayMode"), { recursive: true });
 mkdirSync(projectSettingsDir, { recursive: true });
 mkdirSync(artifactsDir, { recursive: true });
+rmSync(join(tempProject, "Library/UnityAIControlPlane"), { recursive: true, force: true });
+rmSync(join(tempProject, "UnityAIArtifacts"), { recursive: true, force: true });
+rmSync(join(assetsDir, "UnityAiGenerated"), { recursive: true, force: true });
+rmSync(join(assetsDir, "UnityAiGenerated.meta"), { force: true });
+rmSync(join(assetsDir, "UnityAiE2E.unity"), { force: true });
+rmSync(join(assetsDir, "UnityAiE2E.unity.meta"), { force: true });
 rmSync(readyFile, { force: true });
 rmSync(tokenFile, { force: true });
 rmSync(join(packagesDir, "com.unity-ai.control-plane"), { recursive: true, force: true });
@@ -56,7 +64,8 @@ writeFileSync(
   JSON.stringify(
     {
       dependencies: {
-        "com.unity-ai.control-plane": "file:com.unity-ai.control-plane"
+        "com.unity-ai.control-plane": "file:com.unity-ai.control-plane",
+        "com.unity.test-framework": "1.6.0"
       }
     },
     null,
@@ -65,6 +74,53 @@ writeFileSync(
 );
 
 writeFileSync(join(projectSettingsDir, "ProjectVersion.txt"), "m_EditorVersion: 6000.4.9f1\n");
+writeFileSync(join(assetsDir, "UnityAiCheckpointFixture.txt"), "checkpoint-before\n");
+writeFileSync(
+  join(assetsDir, "Tests/EditMode/UnityAiE2E.EditMode.asmdef"),
+  JSON.stringify({
+    name: "UnityAiE2E.EditMode",
+    includePlatforms: ["Editor"],
+    optionalUnityReferences: ["TestAssemblies"]
+  }, null, 2)
+);
+writeFileSync(
+  join(assetsDir, "Tests/EditMode/UnityAiEditModeTests.cs"),
+  `using NUnit.Framework;
+
+public sealed class UnityAiEditModeTests
+{
+    [Test]
+    public void PersistentEditModeJobRuns()
+    {
+        Assert.That(2 + 2, Is.EqualTo(4));
+    }
+}
+`
+);
+writeFileSync(
+  join(assetsDir, "Tests/PlayMode/UnityAiE2E.PlayMode.asmdef"),
+  JSON.stringify({
+    name: "UnityAiE2E.PlayMode",
+    optionalUnityReferences: ["TestAssemblies"]
+  }, null, 2)
+);
+writeFileSync(
+  join(assetsDir, "Tests/PlayMode/UnityAiPlayModeTests.cs"),
+  `using System.Collections;
+using NUnit.Framework;
+using UnityEngine.TestTools;
+
+public sealed class UnityAiPlayModeTests
+{
+    [UnityTest]
+    public IEnumerator PersistentPlayModeJobRuns()
+    {
+        yield return null;
+        Assert.Pass();
+    }
+}
+`
+);
 writeFileSync(
   join(tempProject, applyFixFile),
   `public static class UnityAiE2EApplyFixFixture
@@ -115,8 +171,8 @@ const unity = spawn(unityPath, [
 ], { stdio: "inherit" });
 
 try {
-  await waitForFile(readyFile, 60_000);
-  await waitForBridgeHealth(bridgeUrl, 60_000);
+  await waitForFile(readyFile, 180_000);
+  await waitForBridgeHealth(bridgeUrl, 180_000);
   await assertMutatingRouteRequiresToken(bridgeUrl);
   await waitForBridgeCapability(bridgeUrl, "unity.project.inspect", 180_000);
 
@@ -152,7 +208,8 @@ try {
   assertPackageList(await callJsonTool(client, "unity.packages.list", {}));
   assertProjectSettings(await callJsonTool(client, "unity.project.settings.inspect", {}));
   await callJsonTool(client, "unity.meta_xr.validate_setup", {});
-  await callJsonTool(client, "unity.vision.capture", { source: "scene" });
+  await assertVisualVerificationFlow(client);
+  await assertExtendedControlPlaneFlow(client);
 
   const dryRun = await callJsonTool(client, "unity.editor.create_empty_game_object", {
     name: "Unity AI E2E Dry Run",
@@ -268,6 +325,9 @@ try {
     fail("Post-undo project inspection expected created object name to be absent.");
   }
 
+  await assertSceneUpsertGameObjectFlow(client);
+  await assertSceneBatchFlow(client);
+
   await client.close();
   console.log(`MCP ↔ Unity end-to-end verification passed. Unity log: ${logPath}`);
 } finally {
@@ -366,6 +426,82 @@ function assertCapabilities(capabilities) {
 
   if (!Array.isArray(applyFixCapability.verification) || !applyFixCapability.verification.includes("line_replacement_verified")) {
     fail("unity.console.apply_fix capability must declare line_replacement_verified verification.");
+  }
+
+  const sceneUpsertCapability = capabilities.find((capability) => capability.name === "unity.scene.upsert_game_object");
+  if (!sceneUpsertCapability) {
+    fail("unity.capabilities.list did not include unity.scene.upsert_game_object.");
+  }
+
+  if (!Array.isArray(sceneUpsertCapability.permissions) || !sceneUpsertCapability.permissions.includes("modify_scenes")) {
+    fail("unity.scene.upsert_game_object capability must declare modify_scenes permission.");
+  }
+
+  if (!Array.isArray(sceneUpsertCapability.effects) || !sceneUpsertCapability.effects.includes("write_audit_log") || !sceneUpsertCapability.effects.includes("scene_change")) {
+    fail("unity.scene.upsert_game_object capability must declare audit and scene change effects.");
+  }
+
+  if (!Array.isArray(sceneUpsertCapability.verification) || !sceneUpsertCapability.verification.includes("scene_mutation_verified")) {
+    fail("unity.scene.upsert_game_object capability must declare scene_mutation_verified verification.");
+  }
+
+  const gameObjectInspectCapability = capabilities.find((capability) => capability.name === "unity.scene.inspect_game_object");
+  if (!gameObjectInspectCapability || !gameObjectInspectCapability.permissions.includes("read_scenes") || !gameObjectInspectCapability.effects.includes("report_only")) {
+    fail("unity.scene.inspect_game_object must be a read-only scene inspection capability.");
+  }
+
+  const sceneBatchCapability = capabilities.find((capability) => capability.name === "unity.scene.batch");
+  if (!sceneBatchCapability) {
+    fail("unity.capabilities.list did not include unity.scene.batch.");
+  }
+
+  if (!sceneBatchCapability.permissions.includes("modify_scenes") || !sceneBatchCapability.permissions.includes("read_assets")) {
+    fail("unity.scene.batch must declare modify_scenes and read_assets permissions.");
+  }
+
+  if (!sceneBatchCapability.effects.includes("write_audit_log") || !sceneBatchCapability.effects.includes("scene_change")) {
+    fail("unity.scene.batch must declare audit and scene change effects.");
+  }
+
+  for (const signal of ["scene_mutation_verified", "batch_applied", "component_state_verified"]) {
+    if (!sceneBatchCapability.verification.includes(signal)) {
+      fail(`unity.scene.batch must declare ${signal} verification.`);
+    }
+  }
+
+  const captureCapability = capabilities.find((capability) => capability.name === "unity.vision.capture");
+  if (!captureCapability || !captureCapability.permissions.includes("capture_screenshots") || !captureCapability.permissions.includes("write_artifacts")) {
+    fail("unity.vision.capture must declare screenshot capture and artifact permissions.");
+  }
+
+  if (!captureCapability.verification.includes("screenshot_available") || !captureCapability.verification.includes("screenshot_ready")) {
+    fail("unity.vision.capture must declare screenshot availability and readiness verification.");
+  }
+
+  const compareCapability = capabilities.find((capability) => capability.name === "unity.vision.compare");
+  if (!compareCapability || !compareCapability.permissions.includes("read_artifacts") || !compareCapability.permissions.includes("write_artifacts")) {
+    fail("unity.vision.compare must declare read_artifacts and write_artifacts permissions.");
+  }
+
+  if (!compareCapability.verification.includes("visual_diff_checked") || !compareCapability.verification.includes("visual_regression_detected") || !compareCapability.verification.includes("visual_regression_absent")) {
+    fail("unity.vision.compare must declare diff and regression verification signals.");
+  }
+
+  for (const name of [
+    "unity.tests.run",
+    "unity.playmode.control",
+    "unity.compilation.wait",
+    "unity.build.android",
+    "unity.assets.author",
+    "unity.prefab.manage",
+    "unity.checkpoints.restore",
+    "unity.project.settings.update",
+    "unity.packages.change",
+    "unity.meta_xr.configure"
+  ]) {
+    if (!capabilities.some((capability) => capability.name === name)) {
+      fail(`unity.capabilities.list did not include ${name}.`);
+    }
   }
 }
 
@@ -487,6 +623,115 @@ function assertCreateResult(label, result, expected) {
   for (const signal of expected.forbiddenSignals) {
     if (result.verificationSignals.includes(signal)) {
       fail(`${label}: did not expect verificationSignals to include ${signal}.`);
+    }
+  }
+}
+
+function assertSceneUpsertResult(label, result, expected) {
+  if (result.dryRun !== expected.dryRun || result.created !== expected.created || result.updated !== expected.updated) {
+    fail(`${label}: expected dryRun=${expected.dryRun} created=${expected.created} updated=${expected.updated}, got dryRun=${result.dryRun} created=${result.created} updated=${result.updated}.`);
+  }
+
+  if (result.refused === true) {
+    fail(`${label}: did not expect refusal.`);
+  }
+
+  if (result.rootGameObjectCountBefore !== expected.beforeCount) {
+    fail(`${label}: expected before count ${expected.beforeCount}, got ${result.rootGameObjectCountBefore}.`);
+  }
+
+  if (result.rootGameObjectCountAfter !== expected.afterCount) {
+    fail(`${label}: expected after count ${expected.afterCount}, got ${result.rootGameObjectCountAfter}.`);
+  }
+
+  if (typeof result.audit !== "string" || result.audit.length === 0 || typeof result.verification !== "string" || result.verification.length === 0) {
+    fail(`${label}: expected non-empty audit and verification strings.`);
+  }
+
+  if (!Array.isArray(result.auditEvents) || result.auditEvents.length !== 1) {
+    fail(`${label}: expected exactly one structured audit event.`);
+  }
+
+  const [auditEvent] = result.auditEvents;
+  if (auditEvent.capability !== "unity.scene.upsert_game_object") {
+    fail(`${label}: expected audit event capability unity.scene.upsert_game_object, got ${auditEvent.capability}.`);
+  }
+
+  if (JSON.stringify(auditEvent.effects) !== JSON.stringify(expected.effects)) {
+    fail(`${label}: expected audit effects ${JSON.stringify(expected.effects)}, got ${JSON.stringify(auditEvent.effects)}.`);
+  }
+
+  if (typeof result.requestId !== "string" || result.requestId.length === 0 || typeof result.correlationId !== "string" || result.correlationId.length === 0) {
+    fail(`${label}: expected non-empty requestId and correlationId.`);
+  }
+
+  if (auditEvent.requestId !== result.requestId || auditEvent.correlationId !== result.correlationId) {
+    fail(`${label}: expected audit request/correlation ids to match result.`);
+  }
+
+  if (Number.isNaN(Date.parse(auditEvent.timestamp)) || Number.isNaN(Date.parse(result.timestampUtc))) {
+    fail(`${label}: expected ISO-parseable timestamps.`);
+  }
+
+  const expectedVerificationStatus = expected.verificationStatus ?? "passed";
+  if (result.verificationStatus !== expectedVerificationStatus) {
+    fail(`${label}: expected verificationStatus ${expectedVerificationStatus}, got ${result.verificationStatus}.`);
+  }
+
+  const expectedRequiresConfirmation = expected.requiresConfirmation ?? false;
+  if (result.requiresConfirmation !== expectedRequiresConfirmation) {
+    fail(`${label}: expected requiresConfirmation ${expectedRequiresConfirmation}, got ${result.requiresConfirmation}.`);
+  }
+
+  if (!Array.isArray(result.requiredPermissions) || !result.requiredPermissions.includes("modify_scenes")) {
+    fail(`${label}: expected requiredPermissions to include modify_scenes.`);
+  }
+
+  if (result.auditPersisted !== true || typeof result.auditLogPath !== "string" || result.auditLogPath.startsWith("/")) {
+    fail(`${label}: expected persisted relative audit log path.`);
+  }
+
+  assertAuditLogContains(label, join(tempProject, result.auditLogPath), auditEvent);
+
+  if (!Array.isArray(result.verificationSignals)) {
+    fail(`${label}: expected verificationSignals array.`);
+  }
+
+  for (const signal of expected.requiredSignals) {
+    if (!result.verificationSignals.includes(signal)) {
+      fail(`${label}: expected verificationSignals to include ${signal}.`);
+    }
+  }
+
+  for (const signal of expected.forbiddenSignals) {
+    if (result.verificationSignals.includes(signal)) {
+      fail(`${label}: did not expect verificationSignals to include ${signal}.`);
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(result, "auditLogAbsolutePath")) {
+    fail(`${label}: scene upsert must not expose auditLogAbsolutePath.`);
+  }
+
+  assertNoAbsolutePathLeakInValue(label, result);
+}
+
+function findSceneObject(report, path) {
+  if (!report || !Array.isArray(report.gameObjects)) {
+    return undefined;
+  }
+
+  return report.gameObjects.find((gameObject) => gameObject.path === path);
+}
+
+function assertVectorClose(label, actual, expected) {
+  if (!actual || typeof actual.x !== "number" || typeof actual.y !== "number" || typeof actual.z !== "number") {
+    fail(`${label}: expected vector fields, got ${JSON.stringify(actual)}.`);
+  }
+
+  for (const axis of ["x", "y", "z"]) {
+    if (Math.abs(actual[axis] - expected[axis]) > 0.001) {
+      fail(`${label}: expected ${axis}=${expected[axis]}, got ${actual[axis]}.`);
     }
   }
 }
@@ -625,6 +870,894 @@ async function assertApplyFixFlow(client) {
     checkpointCreated: true
   });
   assertFileContainsLine("real apply_fix", join(tempProject, applyFixFile), applyFixReplacementLine);
+}
+
+async function assertSceneUpsertGameObjectFlow(client) {
+  const before = await callJsonTool(client, "unity.project.inspect", {});
+
+  const dryRun = await callJsonTool(client, "unity.scene.upsert_game_object", {
+    name: "UnityAiE2EDryRunCube",
+    path: "UnityAiAuthoringDryRun",
+    primitive: "cube"
+  });
+  assertSceneUpsertResult("dry-run scene upsert", dryRun, {
+    dryRun: true,
+    created: false,
+    updated: false,
+    beforeCount: before.rootGameObjectCount,
+    afterCount: before.rootGameObjectCount,
+    effects: ["report_only", "write_audit_log"],
+    requiredSignals: ["operation_audited", "structured_observation"],
+    forbiddenSignals: ["scene_mutation_verified"]
+  });
+
+  let inspected = await callJsonTool(client, "unity.scene.inspect", { includeComponents: true, maxDepth: 5, maxGameObjects: 100 });
+  if (findSceneObject(inspected, "UnityAiAuthoringDryRun/UnityAiE2EDryRunCube")) {
+    fail("dry-run scene upsert created an object.");
+  }
+
+  const needsConfirmation = await callJsonTool(client, "unity.scene.upsert_game_object", {
+    name: "UnityAiE2ENeedsConfirmation",
+    path: "UnityAiAuthoringNeedsConfirmation",
+    primitive: "cube",
+    dryRun: false,
+    confirm: false
+  });
+  assertSceneUpsertResult("scene upsert confirmation gate", needsConfirmation, {
+    dryRun: false,
+    created: false,
+    updated: false,
+    beforeCount: before.rootGameObjectCount,
+    afterCount: before.rootGameObjectCount,
+    effects: ["report_only", "write_audit_log"],
+    requiredSignals: ["operation_audited", "structured_observation"],
+    forbiddenSignals: ["scene_mutation_verified"],
+    verificationStatus: "needs_confirmation",
+    requiresConfirmation: true
+  });
+
+  const created = await callJsonTool(client, "unity.scene.upsert_game_object", {
+    name: "UnityAiE2ECube",
+    path: "UnityAiAuthoring",
+    primitive: "cube",
+    transform: {
+      position: { x: 1.5, y: 2.25, z: -3.5 },
+      rotationEuler: { x: 0, y: 45, z: 0 },
+      scale: { x: 2, y: 3, z: 4 }
+    },
+    tag: "Untagged",
+    layer: "Default",
+    active: true,
+    dryRun: false,
+    confirm: true
+  });
+  assertSceneUpsertResult("real scene upsert create", created, {
+    dryRun: false,
+    created: true,
+    updated: false,
+    beforeCount: before.rootGameObjectCount,
+    afterCount: before.rootGameObjectCount + 1,
+    effects: ["scene_change", "write_audit_log"],
+    requiredSignals: ["operation_audited", "structured_observation", "scene_mutation_verified"],
+    forbiddenSignals: [],
+    verificationStatus: "passed"
+  });
+
+  inspected = await callJsonTool(client, "unity.scene.inspect", { includeComponents: true, maxDepth: 5, maxGameObjects: 100 });
+  const cube = findSceneObject(inspected, "UnityAiAuthoring/UnityAiE2ECube");
+  if (!cube) {
+    fail("scene inspect did not include created upsert cube.");
+  }
+
+  if (!Array.isArray(cube.components) || !cube.components.includes("BoxCollider")) {
+    fail(`created upsert cube did not include expected primitive BoxCollider: ${JSON.stringify(cube.components)}.`);
+  }
+
+  assertVectorClose("created cube position", cube.position, { x: 1.5, y: 2.25, z: -3.5 });
+  assertVectorClose("created cube scale", cube.scale, { x: 2, y: 3, z: 4 });
+
+  const updated = await callJsonTool(client, "unity.scene.upsert_game_object", {
+    name: "UnityAiE2ECube",
+    path: "UnityAiAuthoring",
+    mode: "update",
+    transform: {
+      position: { x: -4, y: 0.5, z: 8 }
+    },
+    active: false,
+    dryRun: false,
+    confirm: true
+  });
+  assertSceneUpsertResult("real scene upsert update", updated, {
+    dryRun: false,
+    created: false,
+    updated: true,
+    beforeCount: before.rootGameObjectCount + 1,
+    afterCount: before.rootGameObjectCount + 1,
+    effects: ["scene_change", "write_audit_log"],
+    requiredSignals: ["operation_audited", "structured_observation", "scene_mutation_verified"],
+    forbiddenSignals: [],
+    verificationStatus: "passed"
+  });
+
+  inspected = await callJsonTool(client, "unity.scene.inspect", { includeComponents: true, maxDepth: 5, maxGameObjects: 100 });
+  const updatedCube = findSceneObject(inspected, "UnityAiAuthoring/UnityAiE2ECube");
+  if (!updatedCube || updatedCube.activeSelf !== false) {
+    fail("scene upsert update did not set active=false.");
+  }
+  assertVectorClose("updated cube position", updatedCube.position, { x: -4, y: 0.5, z: 8 });
+
+  await assertSceneUpsertRefused(client, "bad name", { name: "Bad/Name" });
+  await assertSceneUpsertRefused(client, "bad path", { name: "BadPath", path: "Environment//Rock" });
+  await assertSceneUpsertRefused(client, "extreme transform", { name: "BadTransform", transform: { position: { x: 1000000, y: 0, z: 0 } } });
+  await assertSceneUpsertRefused(client, "invalid tag", { name: "BadTag", tag: "UnityAiTagThatMustNotExist" });
+  await assertSceneUpsertRefused(client, "invalid layer", { name: "BadLayer", layer: "UnityAiLayerThatMustNotExist" });
+
+  const undoUpdate = await callJsonTool(client, "unity.editor.undo_last_operation", {
+    dryRun: false,
+    confirm: true
+  });
+  assertUndoResult("undo scene upsert update", undoUpdate, {
+    dryRun: false,
+    undone: false,
+    beforeCount: before.rootGameObjectCount + 1,
+    afterCount: before.rootGameObjectCount + 1,
+    effects: ["scene_change", "write_audit_log"],
+    requiredSignals: ["operation_audited", "structured_observation"],
+    forbiddenSignals: [],
+    verificationStatus: "failed",
+    requiresConfirmation: false
+  });
+
+  inspected = await callJsonTool(client, "unity.scene.inspect", { includeComponents: true, maxDepth: 5, maxGameObjects: 100 });
+  const cubeAfterUndo = findSceneObject(inspected, "UnityAiAuthoring/UnityAiE2ECube");
+  if (!cubeAfterUndo || cubeAfterUndo.activeSelf !== true) {
+    fail("undo of scene upsert update did not restore active=true.");
+  }
+
+  assertNoAbsolutePathLeakInValue("scene upsert flow", [dryRun, needsConfirmation, created, updated]);
+}
+
+async function assertSceneUpsertRefused(client, label, input) {
+  const result = await callJsonTool(client, "unity.scene.upsert_game_object", input);
+  if (result.refused !== true || result.created !== false || result.updated !== false || result.verificationStatus !== "refused") {
+    fail(`${label}: expected scene upsert refusal, got ${JSON.stringify(result)}.`);
+  }
+
+  if (!Array.isArray(result.auditEvents) || result.auditEvents.length !== 1 || result.auditEvents[0].capability !== "unity.scene.upsert_game_object") {
+    fail(`${label}: refused scene upsert must return one structured audit event.`);
+  }
+
+  assertNoAbsolutePathLeakInValue(label, result);
+}
+
+async function assertSceneBatchFlow(client) {
+  const dryRun = await callJsonTool(client, "unity.scene.batch", {
+    operations: [
+      { kind: "create", name: "UnityAiBatchDryRun", primitive: "empty" }
+    ]
+  });
+  assertSceneBatchResult("dry-run scene batch", dryRun, {
+    dryRun: true,
+    applied: false,
+    rolledBack: false,
+    verificationStatus: "passed",
+    requiresConfirmation: false,
+    effects: ["report_only", "write_audit_log"],
+    requiredSignals: ["operation_audited", "structured_observation"],
+    forbiddenSignals: ["batch_applied", "component_state_verified", "scene_mutation_verified"]
+  });
+
+  let scene = await callJsonTool(client, "unity.scene.inspect", { includeComponents: true, maxDepth: 6, maxGameObjects: 200 });
+  if (findSceneObject(scene, "UnityAiBatchDryRun")) {
+    fail("dry-run scene batch created a GameObject.");
+  }
+
+  const needsConfirmation = await callJsonTool(client, "unity.scene.batch", {
+    dryRun: false,
+    operations: [
+      { kind: "create", name: "UnityAiBatchNeedsConfirmation", primitive: "empty" }
+    ]
+  });
+  assertSceneBatchResult("scene batch confirmation gate", needsConfirmation, {
+    dryRun: false,
+    applied: false,
+    rolledBack: false,
+    verificationStatus: "needs_confirmation",
+    requiresConfirmation: true,
+    effects: ["report_only", "write_audit_log"],
+    requiredSignals: ["operation_audited", "structured_observation"],
+    forbiddenSignals: ["batch_applied", "component_state_verified", "scene_mutation_verified"]
+  });
+
+  const applied = await callJsonTool(client, "unity.scene.batch", {
+    dryRun: false,
+    confirm: true,
+    operations: [
+      { kind: "create", name: "UnityAiBatchRoot", primitive: "empty" },
+      {
+        kind: "reparent",
+        targetPath: "UnityAiAuthoring/UnityAiE2ECube",
+        parentPath: "UnityAiBatchRoot",
+        worldPositionStays: true
+      },
+      {
+        kind: "add_component",
+        targetPath: "UnityAiBatchRoot/UnityAiE2ECube",
+        componentType: "UnityEngine.Rigidbody"
+      },
+      {
+        kind: "set_property",
+        targetPath: "UnityAiBatchRoot/UnityAiE2ECube",
+        componentType: "UnityEngine.Rigidbody",
+        propertyPath: "m_Mass",
+        value: { kind: "number", numberValue: 2.5 }
+      },
+      {
+        kind: "set_property",
+        targetPath: "UnityAiBatchRoot/UnityAiE2ECube",
+        componentType: "UnityEngine.Rigidbody",
+        propertyPath: "m_UseGravity",
+        value: { kind: "bool", boolValue: false }
+      },
+      {
+        kind: "duplicate",
+        targetPath: "UnityAiBatchRoot/UnityAiE2ECube",
+        name: "UnityAiBatchCopy",
+        worldPositionStays: true
+      },
+      {
+        kind: "rename",
+        targetPath: "UnityAiBatchRoot/UnityAiBatchCopy",
+        name: "UnityAiBatchRenamed"
+      },
+      {
+        kind: "set_active",
+        targetPath: "UnityAiBatchRoot/UnityAiBatchRenamed",
+        active: false
+      },
+      {
+        kind: "instantiate_prefab",
+        prefabPath: "Assets/UnityAiE2E.prefab",
+        parentPath: "UnityAiBatchRoot",
+        name: "UnityAiBatchPrefab"
+      }
+    ]
+  });
+  assertSceneBatchResult("real scene batch", applied, {
+    dryRun: false,
+    applied: true,
+    rolledBack: false,
+    verificationStatus: "passed",
+    requiresConfirmation: false,
+    effects: ["scene_change", "write_audit_log"],
+    requiredSignals: ["operation_audited", "structured_observation", "batch_applied", "component_state_verified", "scene_mutation_verified"],
+    forbiddenSignals: []
+  });
+
+  if (applied.appliedOperationCount !== 9 || !Array.isArray(applied.operations) || applied.operations.some((operation) => operation.applied !== true || operation.verified !== true)) {
+    fail(`real scene batch did not verify all operations: ${JSON.stringify(applied.operations)}.`);
+  }
+
+  const inspected = await callJsonTool(client, "unity.scene.inspect_game_object", {
+    path: "UnityAiBatchRoot/UnityAiE2ECube",
+    includeProperties: true,
+    maxProperties: 1000,
+    maxPropertyDepth: 8
+  });
+  assertGameObjectInspection(inspected);
+
+  scene = await callJsonTool(client, "unity.scene.inspect", { includeComponents: true, maxDepth: 6, maxGameObjects: 200 });
+  const renamedCopy = findSceneObject(scene, "UnityAiBatchRoot/UnityAiBatchRenamed");
+  if (!renamedCopy || renamedCopy.activeSelf !== false) {
+    fail("scene batch did not create, rename, and deactivate the duplicate.");
+  }
+
+  if (!findSceneObject(scene, "UnityAiBatchRoot/UnityAiBatchPrefab")) {
+    fail("scene batch did not instantiate the prefab.");
+  }
+
+  const rolledBack = await callJsonTool(client, "unity.scene.batch", {
+    dryRun: false,
+    confirm: true,
+    operations: [
+      {
+        kind: "set_active",
+        targetPath: "UnityAiBatchRoot/UnityAiE2ECube",
+        active: false
+      },
+      {
+        kind: "add_component",
+        targetPath: "UnityAiBatchRoot/UnityAiE2ECube",
+        componentType: "UnityAi.Type.That.Does.Not.Exist"
+      }
+    ]
+  });
+  assertSceneBatchResult("failed scene batch rollback", rolledBack, {
+    dryRun: false,
+    applied: false,
+    rolledBack: true,
+    verificationStatus: "failed",
+    requiresConfirmation: false,
+    effects: ["scene_change", "write_audit_log"],
+    requiredSignals: ["operation_audited", "structured_observation"],
+    forbiddenSignals: ["batch_applied", "component_state_verified", "scene_mutation_verified"]
+  });
+
+  const afterRollback = await callJsonTool(client, "unity.scene.inspect_game_object", {
+    path: "UnityAiBatchRoot/UnityAiE2ECube",
+    includeProperties: false
+  });
+  if (afterRollback.activeSelf !== true) {
+    fail("failed scene batch did not roll back the earlier active-state mutation.");
+  }
+
+  const cleanup = await callJsonTool(client, "unity.scene.batch", {
+    dryRun: false,
+    confirm: true,
+    operations: [
+      {
+        kind: "remove_component",
+        targetPath: "UnityAiBatchRoot/UnityAiE2ECube",
+        componentType: "UnityEngine.Rigidbody"
+      },
+      { kind: "delete", targetPath: "UnityAiBatchRoot/UnityAiBatchRenamed" },
+      { kind: "delete", targetPath: "UnityAiBatchRoot/UnityAiBatchPrefab" }
+    ]
+  });
+  assertSceneBatchResult("scene batch cleanup", cleanup, {
+    dryRun: false,
+    applied: true,
+    rolledBack: false,
+    verificationStatus: "passed",
+    requiresConfirmation: false,
+    effects: ["scene_change", "write_audit_log"],
+    requiredSignals: ["batch_applied", "component_state_verified", "scene_mutation_verified"],
+    forbiddenSignals: []
+  });
+}
+
+function assertSceneBatchResult(label, result, expected) {
+  if (result.dryRun !== expected.dryRun || result.applied !== expected.applied || result.rolledBack !== expected.rolledBack) {
+    fail(`${label}: unexpected batch state ${JSON.stringify({ dryRun: result.dryRun, applied: result.applied, rolledBack: result.rolledBack })}.`);
+  }
+
+  if (result.verificationStatus !== expected.verificationStatus || result.requiresConfirmation !== expected.requiresConfirmation) {
+    fail(`${label}: unexpected verification state ${result.verificationStatus}, confirmation=${result.requiresConfirmation}.`);
+  }
+
+  if (!Array.isArray(result.auditEvents) || result.auditEvents.length !== 1 || result.auditEvents[0].capability !== "unity.scene.batch") {
+    fail(`${label}: expected one unity.scene.batch audit event.`);
+  }
+
+  const [auditEvent] = result.auditEvents;
+  if (JSON.stringify(auditEvent.effects) !== JSON.stringify(expected.effects)) {
+    fail(`${label}: expected audit effects ${JSON.stringify(expected.effects)}, got ${JSON.stringify(auditEvent.effects)}.`);
+  }
+
+  if (auditEvent.requestId !== result.requestId || auditEvent.correlationId !== result.correlationId) {
+    fail(`${label}: audit correlation identifiers do not match.`);
+  }
+
+  if (!Array.isArray(result.requiredPermissions) || !result.requiredPermissions.includes("modify_scenes") || !result.requiredPermissions.includes("read_assets")) {
+    fail(`${label}: expected read_assets and modify_scenes permissions.`);
+  }
+
+  if (result.auditPersisted !== true || typeof result.auditLogPath !== "string" || result.auditLogPath.startsWith("/")) {
+    fail(`${label}: expected a persisted project-relative audit log.`);
+  }
+
+  assertAuditLogContains(label, join(tempProject, result.auditLogPath), auditEvent);
+
+  for (const signal of expected.requiredSignals) {
+    if (!result.verificationSignals.includes(signal)) {
+      fail(`${label}: expected verification signal ${signal}.`);
+    }
+  }
+
+  for (const signal of expected.forbiddenSignals) {
+    if (result.verificationSignals.includes(signal)) {
+      fail(`${label}: did not expect verification signal ${signal}.`);
+    }
+  }
+
+  assertNoAbsolutePathLeakInValue(label, result);
+}
+
+function assertGameObjectInspection(report) {
+  if (report.found !== true || report.path !== "UnityAiBatchRoot/UnityAiE2ECube" || !Array.isArray(report.components)) {
+    fail(`unity.scene.inspect_game_object returned an invalid report: ${JSON.stringify(report)}.`);
+  }
+
+  const rigidbody = report.components.find((component) => component.fullTypeName === "UnityEngine.Rigidbody");
+  if (!rigidbody || !Array.isArray(rigidbody.properties)) {
+    fail("unity.scene.inspect_game_object did not include the Rigidbody component.");
+  }
+
+  if (rigidbody.componentTypeIndex !== 0 || typeof rigidbody.index !== "number") {
+    fail("unity.scene.inspect_game_object did not expose stable component indices.");
+  }
+
+  const mass = rigidbody.properties.find((property) => property.path === "m_Mass");
+  const useGravity = rigidbody.properties.find((property) => property.path === "m_UseGravity");
+  if (!mass || Math.abs(Number(mass.value) - 2.5) > 0.001 || !useGravity || useGravity.value !== "false") {
+    fail(`unity.scene.inspect_game_object did not verify Rigidbody properties: ${JSON.stringify(rigidbody.properties)}.`);
+  }
+
+  assertNoAbsolutePathLeakInValue("game object inspection", report);
+}
+
+async function assertVisualVerificationFlow(client) {
+  const refusedAbsolutePath = await callJsonTool(client, "unity.vision.compare", {
+    beforePath: "/tmp/unity-ai-before.png",
+    afterPath: "/tmp/unity-ai-after.png"
+  });
+  if (refusedAbsolutePath.compared !== false || refusedAbsolutePath.beforePath !== "" || refusedAbsolutePath.afterPath !== "") {
+    fail(`visual comparison did not safely refuse absolute artifact paths: ${JSON.stringify(refusedAbsolutePath)}.`);
+  }
+  assertNoAbsolutePathLeakInValue("visual absolute path refusal", refusedAbsolutePath);
+
+  const baseline = await callJsonTool(client, "unity.vision.capture", {
+    source: "game",
+    width: 160,
+    height: 90,
+    label: "baseline",
+    cameraPath: "UnityAiE2EVisualCamera"
+  });
+  assertReadyScreenshot("visual baseline", baseline, 160, 90);
+
+  const identical = await callJsonTool(client, "unity.vision.compare", {
+    beforePath: baseline.path,
+    afterPath: baseline.path,
+    pixelThreshold: 0.01,
+    maxChangedPixelRatio: 0,
+    maxMeanAbsoluteError: 0,
+    generateDiff: true,
+    label: "identical"
+  });
+  assertVisualComparison("identical visual comparison", identical, false);
+
+  const regression = await callJsonTool(client, "unity.vision.compare", {
+    beforePath: "UnityAIArtifacts/Screenshots/e2e-before.png",
+    afterPath: "UnityAIArtifacts/Screenshots/e2e-after.png",
+    pixelThreshold: 0.05,
+    maxChangedPixelRatio: 0.01,
+    maxMeanAbsoluteError: 0.01,
+    generateDiff: true,
+    label: "regression"
+  });
+  assertVisualComparison("visual regression comparison", regression, true);
+
+  if (regression.changedPixelRatio < 0.99 || regression.meanAbsoluteError <= 0.1) {
+    fail(`visual regression metrics were unexpectedly weak: ${JSON.stringify(regression)}.`);
+  }
+}
+
+async function assertExtendedControlPlaneFlow(client) {
+  const settingsPreview = await callJsonTool(client, "unity.project.settings.update", {
+    productName: "Unity AI E2E Preview"
+  });
+  if (settingsPreview.dryRun !== true || !settingsPreview.changedFields?.includes("productName")) {
+    fail(`project settings dry run was invalid: ${JSON.stringify(settingsPreview)}.`);
+  }
+
+  const packagePreview = await callJsonTool(client, "unity.packages.change", {
+    add: ["com.unity.xr.management"]
+  });
+  if (packagePreview.dryRun !== true || packagePreview.status !== "preview") {
+    fail(`package change dry run was invalid: ${JSON.stringify(packagePreview)}.`);
+  }
+
+  const metaPreview = await callJsonTool(client, "unity.meta_xr.configure", {});
+  if (metaPreview.dryRun !== true || metaPreview.status !== "preview") {
+    fail(`Meta XR configuration dry run was invalid: ${JSON.stringify(metaPreview)}.`);
+  }
+
+  const buildValidation = await callJsonTool(client, "unity.build.validate_android_quest", {});
+  if (typeof buildValidation.valid !== "boolean" || !Array.isArray(buildValidation.errors) || !Array.isArray(buildValidation.warnings)) {
+    fail(`Android/Quest build validation shape was invalid: ${JSON.stringify(buildValidation)}.`);
+  }
+
+  const buildPreview = await callJsonTool(client, "unity.build.android", {});
+  if (buildPreview.dryRun !== true || typeof buildPreview.status !== "string") {
+    fail(`Android build dry run was invalid: ${JSON.stringify(buildPreview)}.`);
+  }
+
+  const compilationStart = await callJsonTool(client, "unity.compilation.wait", {
+    triggerRefresh: false,
+    timeoutSeconds: 120,
+    maxErrorCount: 100
+  });
+  const compilationJob = await waitForJob(client, compilationStart, 120_000);
+  if (compilationJob.status !== "succeeded" || !compilationJob.verificationSignals.includes("compilation_completed")) {
+    fail(`compilation wait job failed: ${JSON.stringify(compilationJob)}.`);
+  }
+
+  await assertAssetAuthoringFlow(client);
+  await assertDurableCheckpointFlow(client);
+  await assertPrefabManagementFlow(client);
+  await assertTestRun(client, "edit", "UnityAiE2E.EditMode");
+  await assertTestRun(client, "play", "UnityAiE2E.PlayMode");
+  await assertPlayModeControlFlow(client);
+}
+
+async function assertAssetAuthoringFlow(client) {
+  const shader = await callJsonTool(client, "unity.assets.author", {
+    dryRun: false,
+    confirm: true,
+    kind: "shader",
+    path: "Assets/UnityAiGenerated/E2EColor.shader",
+    shaderSource: `Shader "UnityAI/E2EColor"
+{
+    Properties { _Color ("Color", Color) = (1,0,0,1) }
+    SubShader
+    {
+        Pass { Color [_Color] }
+    }
+}`
+  });
+  assertAssetAuthored("shader", shader, "UnityEngine.Shader");
+
+  const material = await callJsonTool(client, "unity.assets.author", {
+    dryRun: false,
+    confirm: true,
+    kind: "material",
+    path: "Assets/UnityAiGenerated/E2EMaterial.mat",
+    shaderName: "Standard",
+    materialProperties: [
+      { name: "_Color", kind: "color", x: 0.2, y: 0.4, z: 0.8, w: 1 }
+    ]
+  });
+  assertAssetAuthored("material", material, "UnityEngine.Material");
+
+  const animation = await callJsonTool(client, "unity.assets.author", {
+    dryRun: false,
+    confirm: true,
+    kind: "animation_clip",
+    path: "Assets/UnityAiGenerated/E2EMove.anim",
+    frameRate: 60,
+    animationCurves: [
+      {
+        componentType: "UnityEngine.Transform",
+        propertyName: "m_LocalPosition.x",
+        keyframes: [
+          { time: 0, value: 0 },
+          { time: 1, value: 1 }
+        ]
+      }
+    ]
+  });
+  assertAssetAuthored("animation", animation, "UnityEngine.AnimationClip");
+
+  const audio = await callJsonTool(client, "unity.assets.author", {
+    dryRun: false,
+    confirm: true,
+    kind: "audio_tone",
+    path: "Assets/UnityAiGenerated/E2ETone.wav",
+    audioTone: {
+      frequencyHz: 440,
+      durationSeconds: 0.1,
+      sampleRate: 22050,
+      channels: 1,
+      amplitude: 0.25
+    },
+    audioImport: {
+      compressionFormat: "pcm",
+      loadType: "decompress_on_load",
+      preloadAudioData: true
+    }
+  });
+  assertAssetAuthored("audio", audio, "UnityEngine.AudioClip");
+}
+
+function assertAssetAuthored(label, result, expectedType) {
+  if (result.verificationStatus !== "passed" || result.assetType !== expectedType || !result.checkpointId || !result.verificationSignals?.includes("asset_mutation_verified")) {
+    fail(`${label} asset authoring failed: ${JSON.stringify(result)}.`);
+  }
+
+  if (!existsSync(join(tempProject, result.path))) {
+    fail(`${label} asset was not created at ${result.path}.`);
+  }
+}
+
+async function assertDurableCheckpointFlow(client) {
+  const fixturePath = "Assets/UnityAiCheckpointFixture.txt";
+  const created = await callJsonTool(client, "unity.checkpoints.create", {
+    dryRun: false,
+    confirm: true,
+    label: "e2e-checkpoint",
+    paths: [fixturePath]
+  });
+  if (created.created !== true || created.verificationStatus !== "passed" || !created.checkpointId) {
+    fail(`checkpoint creation failed: ${JSON.stringify(created)}.`);
+  }
+
+  const listed = await callJsonTool(client, "unity.checkpoints.list", {});
+  if (!listed.checkpoints?.some((checkpoint) => checkpoint.checkpointId === created.checkpointId)) {
+    fail("created checkpoint was not listed.");
+  }
+
+  writeFileSync(join(tempProject, fixturePath), "checkpoint-after\n");
+  const restored = await callJsonTool(client, "unity.checkpoints.restore", {
+    dryRun: false,
+    confirm: true,
+    checkpointId: created.checkpointId,
+    createSafetyCheckpoint: true
+  });
+  if (restored.restored !== true || restored.verificationStatus !== "passed" || !restored.safetyCheckpointId) {
+    fail(`checkpoint restore failed: ${JSON.stringify(restored)}.`);
+  }
+
+  if (readFileSync(join(tempProject, fixturePath), "utf8") !== "checkpoint-before\n") {
+    fail("checkpoint restore did not restore the original file content.");
+  }
+
+  const deleted = await callJsonTool(client, "unity.checkpoints.delete", {
+    dryRun: false,
+    confirm: true,
+    checkpointId: created.checkpointId
+  });
+  if (deleted.deleted !== true || deleted.verificationStatus !== "passed") {
+    fail(`checkpoint deletion failed: ${JSON.stringify(deleted)}.`);
+  }
+}
+
+async function assertPrefabManagementFlow(client) {
+  const variantPath = "Assets/UnityAiGenerated/UnityAiE2EVariant.prefab";
+  const variant = await callJsonTool(client, "unity.prefab.manage", {
+    dryRun: false,
+    confirm: true,
+    action: "create_variant",
+    prefabPath: "Assets/UnityAiE2E.prefab",
+    targetPath: variantPath
+  });
+  assertPrefabManaged("create variant", variant, "Variant");
+
+  const edited = await callJsonTool(client, "unity.prefab.manage", {
+    dryRun: false,
+    confirm: true,
+    action: "edit_asset",
+    prefabPath: variantPath,
+    operations: [
+      { kind: "create_child", objectPath: "", name: "ManagedChild" },
+      {
+        kind: "set_property",
+        objectPath: "",
+        componentType: "UnityEngine.BoxCollider",
+        propertyPath: "m_IsTrigger",
+        value: { kind: "bool", boolValue: true }
+      }
+    ]
+  });
+  assertPrefabManaged("edit variant", edited, "Variant");
+
+  const instantiated = await callJsonTool(client, "unity.scene.batch", {
+    dryRun: false,
+    confirm: true,
+    operations: [
+      {
+        kind: "instantiate_prefab",
+        prefabPath: variantPath,
+        name: "UnityAiManagedPrefab"
+      },
+      {
+        kind: "set_property",
+        targetPath: "UnityAiManagedPrefab",
+        componentType: "UnityEngine.BoxCollider",
+        propertyPath: "m_IsTrigger",
+        value: { kind: "bool", boolValue: false }
+      }
+    ]
+  });
+  if (instantiated.applied !== true) {
+    fail(`managed prefab instance setup failed: ${JSON.stringify(instantiated)}.`);
+  }
+
+  const applied = await callJsonTool(client, "unity.prefab.manage", {
+    dryRun: false,
+    confirm: true,
+    action: "apply_overrides",
+    sceneObjectPath: "UnityAiManagedPrefab"
+  });
+  assertPrefabManaged("apply overrides", applied, "Variant");
+
+  await callJsonTool(client, "unity.scene.batch", {
+    dryRun: false,
+    confirm: true,
+    operations: [
+      {
+        kind: "set_property",
+        targetPath: "UnityAiManagedPrefab",
+        componentType: "UnityEngine.BoxCollider",
+        propertyPath: "m_IsTrigger",
+        value: { kind: "bool", boolValue: true }
+      }
+    ]
+  });
+  const reverted = await callJsonTool(client, "unity.prefab.manage", {
+    dryRun: false,
+    confirm: true,
+    action: "revert_overrides",
+    sceneObjectPath: "UnityAiManagedPrefab"
+  });
+  assertPrefabManaged("revert overrides", reverted, "Variant");
+
+  const cleanup = await callJsonTool(client, "unity.scene.batch", {
+    dryRun: false,
+    confirm: true,
+    operations: [
+      { kind: "delete", targetPath: "UnityAiManagedPrefab" }
+    ]
+  });
+  if (cleanup.applied !== true) {
+    fail(`managed prefab cleanup failed: ${JSON.stringify(cleanup)}.`);
+  }
+}
+
+function assertPrefabManaged(label, result, expectedType) {
+  if (result.applied !== true || result.verificationStatus !== "passed" || result.prefabAssetType !== expectedType || !result.checkpointId || !result.verificationSignals?.includes("prefab_mutation_verified")) {
+    fail(`${label} failed: ${JSON.stringify(result)}.`);
+  }
+}
+
+async function assertTestRun(client, mode, assemblyName) {
+  const started = await callJsonTool(client, "unity.tests.run", {
+    dryRun: false,
+    confirm: true,
+    mode,
+    assemblyNames: [assemblyName],
+    saveModifiedScenes: true
+  });
+  const job = await waitForJob(client, started, 180_000);
+  const result = parseJobResult(job);
+  if (job.status !== "succeeded" || result.passed < 1 || result.failed !== 0 || !existsSync(join(tempProject, result.resultPath))) {
+    fail(`${mode} mode test job failed: ${JSON.stringify(job)}.`);
+  }
+}
+
+async function assertPlayModeControlFlow(client) {
+  const initial = await callJsonTool(client, "unity.playmode.status", {});
+  if (initial.isPlaying !== false) {
+    fail("Play Mode should be stopped before control flow.");
+  }
+
+  const entered = await waitForJob(client, await callJsonTool(client, "unity.playmode.control", {
+    dryRun: false,
+    confirm: true,
+    action: "enter"
+  }), 120_000);
+  if (entered.status !== "succeeded") {
+    fail(`enter Play Mode failed: ${JSON.stringify(entered)}.`);
+  }
+
+  for (const action of ["pause", "step", "resume"]) {
+    const job = await waitForJob(client, await callJsonTool(client, "unity.playmode.control", {
+      dryRun: false,
+      confirm: true,
+      action
+    }), 60_000);
+    if (job.status !== "succeeded") {
+      fail(`${action} Play Mode failed: ${JSON.stringify(job)}.`);
+    }
+  }
+
+  const exited = await waitForJob(client, await callJsonTool(client, "unity.playmode.control", {
+    dryRun: false,
+    confirm: true,
+    action: "exit"
+  }), 120_000);
+  if (exited.status !== "succeeded") {
+    fail(`exit Play Mode failed: ${JSON.stringify(exited)}.`);
+  }
+
+  const final = await callJsonTool(client, "unity.playmode.status", {});
+  if (final.isPlaying !== false || final.state !== "stopped") {
+    fail(`Play Mode did not return to stopped: ${JSON.stringify(final)}.`);
+  }
+}
+
+async function waitForJob(client, started, timeoutMs) {
+  if (started.accepted !== true || typeof started.jobId !== "string") {
+    fail(`job was not accepted: ${JSON.stringify(started)}.`);
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  let latest;
+  while (Date.now() < deadline) {
+    await waitForBridgeHealth(bridgeUrl, 30_000);
+    latest = await callJsonToolWithRetry(client, "unity.jobs.get", { jobId: started.jobId }, 30_000);
+    if (["succeeded", "failed", "cancelled"].includes(latest.status)) {
+      return latest;
+    }
+
+    await delay(500);
+  }
+
+  fail(`timed out waiting for job ${started.jobId}: ${JSON.stringify(latest)}.`);
+}
+
+async function callJsonToolWithRetry(client, name, args, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let latestError = "no response";
+  while (Date.now() < deadline) {
+    try {
+      const result = await client.callTool({ name, arguments: args });
+      const text = result?.content?.find((item) => item.type === "text" && item.text.length > 0)?.text;
+      if (text) {
+        try {
+          const parsed = JSON.parse(text);
+          console.log(`✓ ${name}`);
+          return parsed;
+        } catch {
+          latestError = text;
+        }
+      }
+    } catch (error) {
+      latestError = error instanceof Error ? error.message : String(error);
+    }
+
+    await delay(500);
+  }
+
+  fail(`Tool ${name} remained unavailable: ${latestError}`);
+}
+
+function parseJobResult(job) {
+  if (typeof job.resultJson !== "string" || job.resultJson.length === 0) {
+    fail(`job ${job.jobId} did not contain resultJson.`);
+  }
+
+  try {
+    return JSON.parse(job.resultJson);
+  } catch (error) {
+    fail(`job ${job.jobId} resultJson was invalid: ${error instanceof Error ? error.message : String(error)}.`);
+  }
+}
+
+function assertReadyScreenshot(label, result, expectedWidth, expectedHeight) {
+  if (result.available !== true || result.ready !== true || result.width !== expectedWidth || result.height !== expectedHeight) {
+    fail(`${label}: screenshot was not ready with expected dimensions: ${JSON.stringify(result)}.`);
+  }
+
+  if (result.cameraPath !== "UnityAiE2EVisualCamera") {
+    fail(`${label}: expected explicit visual fixture camera, got ${result.cameraPath}.`);
+  }
+
+  if (typeof result.path !== "string" || !result.path.startsWith("UnityAIArtifacts/Screenshots/") || result.path.startsWith("/")) {
+    fail(`${label}: expected a project-relative screenshot artifact path, got ${result.path}.`);
+  }
+
+  if (!existsSync(join(tempProject, result.path)) || result.byteLength <= 0 || !/^[a-f0-9]{64}$/.test(result.sha256)) {
+    fail(`${label}: screenshot artifact metadata or file readiness is invalid.`);
+  }
+
+  for (const signal of ["screenshot_available", "screenshot_ready"]) {
+    if (!result.verificationSignals.includes(signal)) {
+      fail(`${label}: expected verification signal ${signal}.`);
+    }
+  }
+
+  assertNoAbsolutePathLeakInValue(label, result);
+}
+
+function assertVisualComparison(label, result, expectedRegression) {
+  if (result.compared !== true || result.dimensionsMatch !== true || result.regressionDetected !== expectedRegression) {
+    fail(`${label}: unexpected visual comparison result: ${JSON.stringify(result)}.`);
+  }
+
+  const expectedSignal = expectedRegression ? "visual_regression_detected" : "visual_regression_absent";
+  if (!result.verificationSignals.includes("visual_diff_checked") || !result.verificationSignals.includes(expectedSignal)) {
+    fail(`${label}: missing visual verification signals.`);
+  }
+
+  if (result.diffReady !== true || typeof result.diffPath !== "string" || !result.diffPath.startsWith("UnityAIArtifacts/Screenshots/") || !existsSync(join(tempProject, result.diffPath))) {
+    fail(`${label}: expected a ready visual diff artifact.`);
+  }
+
+  if (!Array.isArray(result.regressionReasons) || (expectedRegression && result.regressionReasons.length === 0) || (!expectedRegression && result.regressionReasons.length !== 0)) {
+    fail(`${label}: regression reasons do not match the decision.`);
+  }
+
+  assertNoAbsolutePathLeakInValue(label, result);
 }
 
 async function assertApplyFixRefused(client, label, input) {
@@ -876,7 +2009,8 @@ function assertProjectSnapshot(snapshot) {
     fail(`unity.project.snapshot returned too many diagnostics: ${snapshot.console.topDiagnostics.length}.`);
   }
 
-  if (snapshot.console.diagnosticCount === 0 || snapshot.console.errorCount === 0) {
+  const hasDeterministicErrorDiagnostic = snapshot.console.topDiagnostics.some((diagnostic) => diagnostic.category === "compiler_error" || diagnostic.severity === "error");
+  if (snapshot.console.diagnosticCount === 0 || !hasDeterministicErrorDiagnostic) {
     fail(`unity.project.snapshot did not reflect deterministic console diagnostics: ${JSON.stringify(snapshot.console)}.`);
   }
 
@@ -1282,6 +2416,30 @@ async function assertMutatingRouteRequiresToken(url) {
   }
 
   console.log("✓ unity.editor.create_empty_game_object rejects missing token");
+
+  const sceneUpsertResponse = await fetch(`${url}/capabilities/${encodeURIComponent("unity.scene.upsert_game_object")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ input: { name: "Unauthorized Scene Upsert", dryRun: false, confirm: true } })
+  });
+
+  if (sceneUpsertResponse.status !== 403) {
+    fail(`Expected unity.scene.upsert_game_object without token to return 403, got HTTP ${sceneUpsertResponse.status}.`);
+  }
+
+  console.log("✓ unity.scene.upsert_game_object rejects missing token");
+
+  const sceneBatchResponse = await fetch(`${url}/capabilities/${encodeURIComponent("unity.scene.batch")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ input: { dryRun: false, confirm: true, operations: [{ kind: "create", name: "Unauthorized Batch Object" }] } })
+  });
+
+  if (sceneBatchResponse.status !== 403) {
+    fail(`Expected unity.scene.batch without token to return 403, got HTTP ${sceneBatchResponse.status}.`);
+  }
+
+  console.log("✓ unity.scene.batch rejects missing token");
 
   const applyFixResponse = await fetch(`${url}/capabilities/${encodeURIComponent("unity.console.apply_fix")}`, {
     method: "POST",
