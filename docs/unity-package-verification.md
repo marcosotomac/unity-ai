@@ -30,8 +30,9 @@ artifacts/unity-verification/editor-compile.log
 
 ## What this does not verify yet
 
-- Screenshot artifact readiness.
-- Meta XR SDK-specific checks against a real project that has Meta XR installed.
+- Meta XR configuration against a production project or Quest hardware.
+- A real APK/AAB when Android Build Support is absent from the verification Editor.
+- Graphically meaningful camera output under `-nographics`; headless CI verifies PNG readiness and comparison logic independently.
 
 ## Next validation after compile passes
 
@@ -72,6 +73,9 @@ Verified tools:
 - `unity.assets.list`
 - `unity.scenes.list`
 - `unity.scene.inspect`
+- `unity.scene.inspect_game_object`
+- `unity.scene.upsert_game_object`
+- `unity.scene.batch`
 - `unity.prefabs.list`
 - `unity.prefab.inspect`
 - `unity.asset.dependencies`
@@ -81,8 +85,20 @@ Verified tools:
 - `unity.project.settings.inspect`
 - `unity.meta_xr.validate_setup`
 - `unity.vision.capture`
+- `unity.vision.compare`
 - `unity.editor.create_empty_game_object`
 - `unity.editor.undo_last_operation`
+- `unity.jobs.get`
+- `unity.compilation.wait`
+- `unity.tests.run` for Edit Mode and Play Mode
+- `unity.playmode.status` and `unity.playmode.control`
+- `unity.build.validate_android_quest` and build dry-run
+- `unity.assets.author`
+- `unity.prefab.manage`
+- `unity.checkpoints.create`, `list`, `restore`, and `delete`
+- `unity.project.settings.update` dry-run
+- `unity.packages.change` dry-run
+- `unity.meta_xr.configure` dry-run
 
 For a clean CI-style run:
 

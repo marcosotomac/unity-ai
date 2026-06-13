@@ -35,7 +35,7 @@ Then click:
 Start Local Bridge
 ```
 
-The Editor window generates a bridge token. MCP servers must send that token through the `x-unity-ai-bridge-token` header for mutating `unity.editor.*` routes.
+The Editor window generates a bridge token. MCP servers must send that token through the `x-unity-ai-bridge-token` header for every mutating route. The bridge token and enabled state survive Unity domain reloads for the current Editor session.
 
 The MCP server only attaches the token when `UNITY_AI_BRIDGE_URL` points to `http://127.0.0.1`, `http://localhost`, or `http://[::1]`.
 Trailing slashes are normalized by the MCP bridge client.
@@ -49,6 +49,9 @@ The bridge handles:
 - `POST /capabilities/unity.assets.list`
 - `POST /capabilities/unity.scenes.list`
 - `POST /capabilities/unity.scene.inspect`
+- `POST /capabilities/unity.scene.inspect_game_object`
+- `POST /capabilities/unity.scene.upsert_game_object`
+- `POST /capabilities/unity.scene.batch`
 - `POST /capabilities/unity.prefabs.list`
 - `POST /capabilities/unity.prefab.inspect`
 - `POST /capabilities/unity.asset.dependencies`
@@ -56,8 +59,21 @@ The bridge handles:
 - `POST /capabilities/unity.assemblies.list`
 - `POST /capabilities/unity.packages.list`
 - `POST /capabilities/unity.project.settings.inspect`
+- `POST /capabilities/unity.project.settings.update`
+- `POST /capabilities/unity.packages.change`
+- `POST /capabilities/unity.jobs.get|list|cancel`
+- `POST /capabilities/unity.tests.run`
+- `POST /capabilities/unity.playmode.status|control`
+- `POST /capabilities/unity.compilation.status|wait`
+- `POST /capabilities/unity.build.validate_android_quest`
+- `POST /capabilities/unity.build.android`
+- `POST /capabilities/unity.assets.author`
+- `POST /capabilities/unity.prefab.manage`
+- `POST /capabilities/unity.checkpoints.create|list|restore|delete`
 - `POST /capabilities/unity.vision.capture`
+- `POST /capabilities/unity.vision.compare`
 - `POST /capabilities/unity.meta_xr.validate_setup`
+- `POST /capabilities/unity.meta_xr.configure`
 - `POST /capabilities/unity.editor.create_empty_game_object`
 - `POST /capabilities/unity.editor.undo_last_operation`
 
@@ -73,6 +89,9 @@ The MCP server runs over stdio and exposes:
 - `unity.assets.list`
 - `unity.scenes.list`
 - `unity.scene.inspect`
+- `unity.scene.inspect_game_object`
+- `unity.scene.upsert_game_object`
+- `unity.scene.batch`
 - `unity.prefabs.list`
 - `unity.prefab.inspect`
 - `unity.asset.dependencies`
@@ -80,17 +99,28 @@ The MCP server runs over stdio and exposes:
 - `unity.assemblies.list`
 - `unity.packages.list`
 - `unity.project.settings.inspect`
+- `unity.project.settings.update`
+- `unity.packages.change`
+- `unity.jobs.get`, `unity.jobs.list`, `unity.jobs.cancel`
+- `unity.tests.run`
+- `unity.playmode.status`, `unity.playmode.control`
+- `unity.compilation.status`, `unity.compilation.wait`
+- `unity.build.validate_android_quest`, `unity.build.android`
+- `unity.assets.author`
+- `unity.prefab.manage`
+- `unity.checkpoints.create`, `unity.checkpoints.list`, `unity.checkpoints.restore`, `unity.checkpoints.delete`
 - `unity.vision.capture`
+- `unity.vision.compare`
 - `unity.meta_xr.validate_setup`
+- `unity.meta_xr.configure`
 - `unity.editor.create_empty_game_object`
 - `unity.editor.undo_last_operation`
 
 ## Current limitations
 
 - This bridge is local-only and intended for development.
-- It does not enforce the full permission/audit/rollback model yet.
-- It currently exposes two narrow mutating routes: `unity.editor.create_empty_game_object` and `unity.editor.undo_last_operation`.
-- Broader mutating `unity.editor.*` routes are planned but not enabled yet.
+- It does not yet enforce a uniform fine-grained runtime permission/audit model.
+- It exposes narrow compatibility operations plus broad declarative scene authoring through `unity.scene.batch`.
 - Mutating routes require a local bridge token.
 - The token is only a local development safety gate, not a complete permission model.
 - The first mutating route returns structured `auditEvents`, `verificationSignals`, and `verificationStatus` in addition to human-readable summary strings.
@@ -101,8 +131,12 @@ The MCP server runs over stdio and exposes:
 - Audit events include `write_audit_log` as an explicit side effect when persisted.
 - Scene mutation requires `confirm: true`; otherwise the tool returns `verificationStatus: "needs_confirmation"` and does not mutate the scene.
 - Narrow rollback support uses `unity.editor.undo_last_operation` and requires `confirm: true` before performing Unity Undo.
+- Scene batches use isolated Undo groups and automatically revert the complete batch when an operation fails or cannot be verified.
+- Scene authoring intentionally does not expose arbitrary C# execution or reflective method invocation.
 - Act and rollback responses include `requestId` and `correlationId`; persisted audit events include the same IDs.
-- Current rollback verification is scoped to the controlled e2e create→undo path; production-safe rollback still needs explicit checkpoints.
+- Durable checkpoints live under `UnityAIArtifacts/Checkpoints`; job records live under `Library/UnityAIControlPlane/Jobs`.
 - Unity API work is marshaled back to the Editor main thread.
-- Game View screenshot capture can complete asynchronously; artifact readiness checks are still needed.
+- Scene and Game camera capture writes PNGs synchronously and verifies file existence, decoding, dimensions, byte length, and SHA-256 before returning `ready: true`.
+- `unity.vision.compare` only accepts artifacts under `UnityAIArtifacts/Screenshots`, emits normalized pixel metrics, and can generate a verified diff PNG.
+- In Unity `-nographics` mode, camera rendering may be a stable placeholder frame. CI validates artifact readiness separately from comparison logic by using deterministic image fixtures.
 - Scene View capture returns an unavailable result if no active Scene View camera exists.

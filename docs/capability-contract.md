@@ -57,10 +57,24 @@ verification:
 | `unity.prefabs.*` | List prefab assets. |
 | `unity.prefab.*` | Inspect a specific prefab asset. |
 | `unity.scenes.*` | List Unity scenes. |
-| `unity.scene.*` | Inspect active scene hierarchy and scene state. |
+| `unity.scene.*` | Inspect hierarchy/component state and apply controlled, atomic scene authoring batches. |
 | `unity.scripts.*` | Inspect C# scripts visible to Unity. |
 | `unity.assemblies.*` | Inspect Unity script assemblies. |
 | `unity.console.*` | Read, summarize, and verify logs. |
-| `unity.vision.*` | Capture screenshots and support visual checks. |
-| `unity.editor.*` | Execute approved Editor operations. Only `unity.editor.create_empty_game_object` and `unity.editor.undo_last_operation` are exposed today; broader operations remain planned. |
+| `unity.vision.*` | Capture ready screenshots, compare before/after artifacts, generate diffs, and detect visual regressions. |
+| `unity.jobs.*` | Inspect and cancel persistent long-running operations. |
+| `unity.tests.*` | Run Edit Mode and Play Mode tests with XML evidence. |
+| `unity.playmode.*` | Inspect and control Play Mode. |
+| `unity.compilation.*` | Wait for compilation/import and verify console state. |
+| `unity.build.*` | Validate and produce Android/Quest builds. |
+| `unity.checkpoints.*` | Create and restore durable hashed project snapshots. |
+| `unity.editor.*` | Execute approved Editor operations and explicit rollback commands. |
 | `unity.meta_xr.*` | Validate and configure Meta XR project setup. |
+
+## Broad scene authoring
+
+`unity.scene.inspect_game_object` returns bounded component and visible serialized-property metadata for one hierarchy path.
+
+`unity.scene.batch` accepts up to 50 declarative operations and commits them as one isolated Unity Undo group. Supported operations include hierarchy creation/deletion, duplication, rename, reparenting, active state, prefab instantiation, component add/remove, and serialized-property writes.
+
+The batch capability does not invoke arbitrary methods or execute generated C#.
