@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 
 namespace UnityAI.ControlPlane.Editor
@@ -19,6 +20,8 @@ namespace UnityAI.ControlPlane.Editor
             var bridgeToken = GetBridgeToken();
 
             EnsureE2ePrefabFixture();
+            EnsureE2eVisualFixture();
+            EnsureE2eSceneFixture();
 
             UnityAiBridgeServer.Start(bridgeToken);
 
@@ -99,6 +102,68 @@ namespace UnityAI.ControlPlane.Editor
             finally
             {
                 UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        private static void EnsureE2eVisualFixture()
+        {
+            const string cameraName = "UnityAiE2EVisualCamera";
+            WriteSolidVisualFixture("UnityAIArtifacts/Screenshots/e2e-before.png", Color.black);
+            WriteSolidVisualFixture("UnityAIArtifacts/Screenshots/e2e-after.png", Color.red);
+
+            if (GameObject.Find(cameraName) != null)
+            {
+                return;
+            }
+
+            var cameraObject = new GameObject(cameraName);
+            cameraObject.tag = "MainCamera";
+            var camera = cameraObject.AddComponent<Camera>();
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = Color.black;
+            camera.cullingMask = 0;
+            camera.depth = 100;
+            camera.enabled = false;
+        }
+
+        private static void EnsureE2eSceneFixture()
+        {
+            const string scenePath = "Assets/UnityAiE2E.unity";
+            var scene = EditorSceneManager.GetActiveScene();
+            if (string.IsNullOrWhiteSpace(scene.path))
+            {
+                Directory.CreateDirectory("Assets");
+                EditorSceneManager.SaveScene(scene, scenePath);
+            }
+
+            EditorBuildSettings.scenes = new[]
+            {
+                new EditorBuildSettingsScene(scenePath, true)
+            };
+        }
+
+        private static void WriteSolidVisualFixture(string relativePath, Color color)
+        {
+            const int width = 32;
+            const int height = 18;
+            var texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
+            var pixels = new Color32[width * height];
+            var pixel = (Color32)color;
+
+            for (var index = 0; index < pixels.Length; index++)
+            {
+                pixels[index] = pixel;
+            }
+
+            try
+            {
+                texture.SetPixels32(pixels);
+                texture.Apply();
+                File.WriteAllBytes(VisualArtifactStore.ResolveRelativePath(relativePath), texture.EncodeToPNG());
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(texture);
             }
         }
 
