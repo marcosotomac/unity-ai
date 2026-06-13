@@ -29,12 +29,6 @@ namespace UnityAI.ControlPlane.Editor
     }
 
     [Serializable]
-    public sealed class VisionCaptureInput
-    {
-        public string source = "scene";
-    }
-
-    [Serializable]
     internal sealed class BridgeWorkItem
     {
         public string capability;
@@ -46,12 +40,15 @@ namespace UnityAI.ControlPlane.Editor
     public static class UnityAiBridgeServer
     {
         public const int DefaultPort = 39071;
+        private const string SessionEnabledKey = "UnityAI.ControlPlane.BridgeEnabled";
+        private const string SessionTokenKey = "UnityAI.ControlPlane.BridgeToken";
 
         private static readonly ConcurrentQueue<BridgeWorkItem> WorkQueue = new();
         private static HttpListener _listener;
         private static CancellationTokenSource _cancellation;
         private static Task _serverTask;
         private static string _bridgeToken = string.Empty;
+        private static int _restoreAttempts;
 
         public static bool IsRunning => _listener != null && _listener.IsListening;
         public static string Url => $"http://127.0.0.1:{DefaultPort}/";
@@ -62,9 +59,15 @@ namespace UnityAI.ControlPlane.Editor
             EditorApplication.update += ProcessQueuedWork;
             EditorApplication.quitting -= Stop;
             EditorApplication.quitting += Stop;
+            EditorApplication.delayCall += RestoreAfterDomainReload;
         }
 
         public static void Start(string bridgeToken = null)
+        {
+            StartInternal(bridgeToken, true);
+        }
+
+        private static void StartInternal(string bridgeToken, bool persistSession)
         {
             if (IsRunning)
             {
@@ -75,12 +78,36 @@ namespace UnityAI.ControlPlane.Editor
             _cancellation = new CancellationTokenSource();
             _listener = new HttpListener();
             _listener.Prefixes.Add(Url);
-            _listener.Start();
+            try
+            {
+                _listener.Start();
+            }
+            catch
+            {
+                _listener.Close();
+                _listener = null;
+                _cancellation.Dispose();
+                _cancellation = null;
+                throw;
+            }
+
             _serverTask = Task.Run(() => ListenLoop(_cancellation.Token));
+            if (persistSession)
+            {
+                SessionState.SetBool(SessionEnabledKey, true);
+                SessionState.SetString(SessionTokenKey, _bridgeToken);
+            }
+
+            _restoreAttempts = 0;
             Debug.Log($"Unity AI bridge listening on {Url}");
         }
 
         public static void Stop()
+        {
+            StopInternal(true);
+        }
+
+        private static void StopInternal(bool clearSession)
         {
             _cancellation?.Cancel();
 
@@ -98,6 +125,36 @@ namespace UnityAI.ControlPlane.Editor
             _serverTask = null;
             _cancellation = null;
             _bridgeToken = string.Empty;
+            if (clearSession)
+            {
+                SessionState.EraseBool(SessionEnabledKey);
+                SessionState.EraseString(SessionTokenKey);
+            }
+        }
+
+        private static void RestoreAfterDomainReload()
+        {
+            if (IsRunning || !SessionState.GetBool(SessionEnabledKey, false))
+            {
+                return;
+            }
+
+            try
+            {
+                StartInternal(SessionState.GetString(SessionTokenKey, string.Empty), false);
+            }
+            catch (HttpListenerException exception)
+            {
+                _restoreAttempts++;
+                if (_restoreAttempts < 20)
+                {
+                    EditorApplication.delayCall += RestoreAfterDomainReload;
+                    return;
+                }
+
+                Debug.LogError($"Unity AI bridge could not resume after domain reload: {exception.Message}");
+                StopInternal(true);
+            }
         }
 
         private static async Task ListenLoop(CancellationToken cancellationToken)
@@ -232,6 +289,12 @@ namespace UnityAI.ControlPlane.Editor
                     return JsonResult(capability, envelope, SceneListObserver.ListScenes());
                 case "unity.scene.inspect":
                     return JsonResult(capability, envelope, SceneInspector.InspectActiveScene(requestBody));
+                case "unity.scene.inspect_game_object":
+                    return JsonResult(capability, envelope, GameObjectInspector.Inspect(requestBody));
+                case "unity.scene.upsert_game_object":
+                    return JsonResult(capability, envelope, SceneUpsertGameObjectOperation.Execute(requestBody));
+                case "unity.scene.batch":
+                    return JsonResult(capability, envelope, SceneBatchOperation.Execute(requestBody));
                 case "unity.prefabs.list":
                     return JsonResult(capability, envelope, PrefabObserver.ListPrefabs(requestBody));
                 case "unity.prefab.inspect":
@@ -246,10 +309,50 @@ namespace UnityAI.ControlPlane.Editor
                     return JsonResult(capability, envelope, PackageListObserver.ListPackages());
                 case "unity.project.settings.inspect":
                     return JsonResult(capability, envelope, ProjectSettingsInspector.Inspect());
+                case "unity.project.settings.update":
+                    return JsonResult(capability, envelope, ProjectSettingsUpdateOperation.Execute(requestBody));
+                case "unity.packages.change":
+                    return JsonResult(capability, envelope, PackageOperations.Start(requestBody));
+                case "unity.jobs.get":
+                    return JsonResult(capability, envelope, UnityAiJobStore.GetFromRequest(requestBody));
+                case "unity.jobs.list":
+                    return JsonResult(capability, envelope, UnityAiJobStore.ListFromRequest(requestBody));
+                case "unity.jobs.cancel":
+                    return JsonResult(capability, envelope, UnityAiJobStore.CancelFromRequest(requestBody));
+                case "unity.tests.run":
+                    return JsonResult(capability, envelope, TestOperation.Start(requestBody));
+                case "unity.playmode.status":
+                    return JsonResult(capability, envelope, PlayModeController.GetStatus());
+                case "unity.playmode.control":
+                    return JsonResult(capability, envelope, PlayModeController.Start(requestBody));
+                case "unity.compilation.status":
+                    return JsonResult(capability, envelope, CompilationController.GetStatus());
+                case "unity.compilation.wait":
+                    return JsonResult(capability, envelope, CompilationController.Start(requestBody));
+                case "unity.build.validate_android_quest":
+                    return JsonResult(capability, envelope, BuildOperations.ValidateAndroidQuest());
+                case "unity.build.android":
+                    return JsonResult(capability, envelope, BuildOperations.StartAndroidBuild(requestBody));
+                case "unity.assets.author":
+                    return JsonResult(capability, envelope, AssetAuthoringOperation.Execute(requestBody));
+                case "unity.prefab.manage":
+                    return JsonResult(capability, envelope, PrefabAssetOperation.Execute(requestBody));
+                case "unity.checkpoints.create":
+                    return JsonResult(capability, envelope, DurableCheckpointStore.Create(requestBody));
+                case "unity.checkpoints.list":
+                    return JsonResult(capability, envelope, DurableCheckpointStore.List());
+                case "unity.checkpoints.restore":
+                    return JsonResult(capability, envelope, DurableCheckpointStore.Restore(requestBody));
+                case "unity.checkpoints.delete":
+                    return JsonResult(capability, envelope, DurableCheckpointStore.Delete(requestBody));
                 case "unity.vision.capture":
-                    return JsonResult(capability, envelope, CaptureVision(requestBody));
+                    return JsonResult(capability, envelope, ScreenshotCapture.Capture(requestBody));
+                case "unity.vision.compare":
+                    return JsonResult(capability, envelope, VisualComparison.Compare(requestBody));
                 case "unity.meta_xr.validate_setup":
                     return JsonResult(capability, envelope, MetaXrValidator.Validate());
+                case "unity.meta_xr.configure":
+                    return JsonResult(capability, envelope, MetaXrConfigurationController.Start(requestBody));
                 case "unity.editor.create_empty_game_object":
                     return JsonResult(capability, envelope, CreateEmptyGameObjectOperation.Execute(requestBody));
                 case "unity.editor.undo_last_operation":
@@ -281,24 +384,6 @@ namespace UnityAI.ControlPlane.Editor
             }
         }
 
-        private static ScreenshotCaptureResult CaptureVision(string requestBody)
-        {
-            var input = ExtractVisionInput(requestBody);
-            return input.source == "game"
-                ? ScreenshotCapture.CaptureGameView()
-                : ScreenshotCapture.CaptureSceneView();
-        }
-
-        private static VisionCaptureInput ExtractVisionInput(string requestBody)
-        {
-            if (requestBody.Contains("\"source\":\"game\""))
-            {
-                return new VisionCaptureInput { source = "game" };
-            }
-
-            return new VisionCaptureInput { source = "scene" };
-        }
-
         private static BridgeResponse JsonResult(string capability, BridgeRequestEnvelope envelope, object result)
         {
             return new BridgeResponse
@@ -328,6 +413,21 @@ namespace UnityAI.ControlPlane.Editor
             switch (capability)
             {
                 case "unity.console.apply_fix":
+                case "unity.scene.upsert_game_object":
+                case "unity.scene.batch":
+                case "unity.project.settings.update":
+                case "unity.packages.change":
+                case "unity.jobs.cancel":
+                case "unity.tests.run":
+                case "unity.playmode.control":
+                case "unity.compilation.wait":
+                case "unity.build.android":
+                case "unity.assets.author":
+                case "unity.prefab.manage":
+                case "unity.checkpoints.create":
+                case "unity.checkpoints.restore":
+                case "unity.checkpoints.delete":
+                case "unity.meta_xr.configure":
                 case "unity.editor.create_empty_game_object":
                 case "unity.editor.undo_last_operation":
                     return true;
