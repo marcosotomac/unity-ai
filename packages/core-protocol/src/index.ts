@@ -7,6 +7,7 @@ export type CapabilityPermission =
   | "read_scenes"
   | "read_assets"
   | "read_console"
+  | "read_artifacts"
   | "capture_screenshots"
   | "write_artifacts"
   | "modify_scenes"
@@ -28,7 +29,9 @@ export type CapabilityEffect =
   | "project_setting_change"
   | "package_change"
   | "test_execution"
-  | "build_execution";
+  | "build_execution"
+  | "playmode_change"
+  | "checkpoint_change";
 
 export type VerificationSignal =
   | "structured_observation"
@@ -37,7 +40,10 @@ export type VerificationSignal =
   | "fix_plan_generated"
   | "console_clean"
   | "screenshot_available"
+  | "screenshot_ready"
   | "visual_diff_checked"
+  | "visual_regression_detected"
+  | "visual_regression_absent"
   | "xr_settings_valid"
   | "tests_passed"
   | "build_validated"
@@ -45,7 +51,21 @@ export type VerificationSignal =
   | "checkpoint_created"
   | "line_replacement_verified"
   | "scene_mutation_verified"
-  | "rollback_verified";
+  | "batch_applied"
+  | "component_state_verified"
+  | "rollback_verified"
+  | "checkpoint_verified"
+  | "checkpoint_restored"
+  | "checkpoint_deleted"
+  | "playmode_state_verified"
+  | "compilation_completed"
+  | "test_results_available"
+  | "build_succeeded"
+  | "project_settings_verified"
+  | "packages_resolved"
+  | "asset_mutation_verified"
+  | "prefab_mutation_verified"
+  | "meta_xr_configured";
 
 export interface CapabilityManifest {
   readonly name: CapabilityName;
