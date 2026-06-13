@@ -1,0 +1,28 @@
+{
+  "name": "Unity.AI.ControlPlane.Editor.TestRunner",
+  "rootNamespace": "UnityAI.ControlPlane.Editor.Testing",
+  "references": [
+    "Unity.AI.ControlPlane.Editor",
+    "UnityEditor.TestRunner",
+    "UnityEngine.TestRunner"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [
+    "UNITY_AI_TEST_FRAMEWORK"
+  ],
+  "versionDefines": [
+    {
+      "name": "com.unity.test-framework",
+      "expression": "",
+      "define": "UNITY_AI_TEST_FRAMEWORK"
+    }
+  ],
+  "noEngineReferences": false
+}
