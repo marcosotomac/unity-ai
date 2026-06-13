@@ -30,7 +30,7 @@ Unity Editor APIs + Meta XR SDK + project assets
 
 ### MCP server
 
-Exposes project-grade tools to AI agents while defining capability contracts and routing requests. Current runtime safety includes local token gating for mutating routes, confirmation for the first scene mutation, persisted audit events, post-action verification, and narrow Unity Undo verification for the first act loop. Full permission policy, durable two-step approval, correlated rollback checkpoints, and production rollback safety are planned hardening work.
+Exposes project-grade tools to AI agents while defining capability contracts and routing requests. Runtime safety includes local token gating for mutating routes, dry-run and confirmation gates, persistent jobs, hashed durable checkpoints, persisted audit events for established edit flows, post-action verification, isolated Unity Undo groups, and atomic rollback for declarative scene batches. Fine-grained runtime permission policy and uniform audit coverage across every newer operation remain hardening work.
 
 Initial tool families:
 
@@ -38,15 +38,20 @@ Initial tool families:
 - `unity.assets.*` — list project assets with GUIDs, paths, and main asset types.
 - `unity.asset.*` — inspect specific asset metadata and dependencies.
 - `unity.prefabs.*` / `unity.prefab.*` — list and inspect prefab assets.
-- `unity.scene.*` — inspect and modify scenes, GameObjects, prefabs, materials, cameras, lighting, and UI.
+- `unity.scene.*` — inspect hierarchies and serialized component state, then create, duplicate, rename, reparent, delete, instantiate prefabs, add/remove components, and set serialized properties through atomic batches.
 - `unity.scenes.*` — list scenes discovered in the project and Build Settings.
 - `unity.scripts.*` / `unity.assemblies.*` — inspect C# scripts and Unity script assemblies.
-- `unity.packages.*` — list registered Unity packages.
-- `unity.vision.*` — capture Scene View/Game View screenshots and compare visual results.
+- `unity.packages.*` — list and change registry packages through reload-safe jobs.
+- `unity.jobs.*` — inspect and cancel persistent long-running operations.
+- `unity.playmode.*` / `unity.compilation.*` — control Play Mode and wait for compilation/import plus console verification.
+- `unity.checkpoints.*` — create, list, restore, verify, and delete durable project checkpoints.
+- `unity.vision.*` — synchronously capture verified Scene View/Game View PNGs, compare before/after artifacts, generate diff images, and detect threshold-based regressions.
 - `unity.console.*` — read logs, group errors by likely root cause, and verify fixes.
 - `unity.meta_xr.*` — validate and configure Meta XR SDK, OpenXR, rigs, hands, passthrough, anchors, interactions, and Quest build requirements.
 - `unity.tests.*` — run Edit Mode/Play Mode tests and summarize failures.
 - `unity.build.*` — validate and execute builds, especially Android/Quest targets.
+- `unity.assets.author` — create or edit shaders, materials, animation clips, generated WAV audio, and audio import settings.
+- `unity.prefab.manage` — save prefab assets, create variants, edit prefab contents, and apply/revert overrides.
 
 ### Unity Editor plugin
 
@@ -60,10 +65,15 @@ Responsibilities:
 - Execute approved Editor operations.
 - Provide snapshots, undo support, and rollback checkpoints where possible.
 - Validate Meta XR configuration and Quest readiness.
+- Persist long-running tests, builds, package changes, Play Mode transitions, compilation waits, and Meta XR setup across domain reloads.
+
+See `docs/control-plane-operations.md` for operational contracts and examples.
 
 ### Capability system
 
 Capabilities are the extension boundary. The core should stay small; new behavior should be added through capabilities.
+
+The broad scene-authoring boundary is `unity.scene.batch`. It provides reusable Unity operations without exposing arbitrary C# execution or reflective method invocation. See `docs/scene-authoring.md`.
 
 ```yaml
 name: meta_xr.validate_setup
