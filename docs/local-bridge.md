@@ -38,7 +38,7 @@ Then click:
 Start Local Bridge
 ```
 
-The Editor window generates a bridge token. MCP servers must send that token through the `x-unity-ai-bridge-token` header for every mutating route. The bridge token and enabled state survive Unity domain reloads for the current Editor session.
+The Editor window generates a bridge token. MCP servers must send that token through the `x-unity-ai-bridge-token` header for every mutating route. The bridge token and enabled state survive Unity domain reloads for the current Editor session. Desktop Editors can also recover from missing session state by reading `~/.config/unity-ai/bridge-token`; this fallback is disabled in batch mode.
 
 During compilation/domain reload, MCP calls wait behind a shared health/reconnection gate and retry with the same `requestId` and `correlationId`. Mutating responses are persisted under `Library/UnityAIControlPlane/BridgeResponses`, so a lost HTTP response can be replayed after reload without applying the operation twice.
 

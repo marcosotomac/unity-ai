@@ -156,7 +156,17 @@ namespace UnityAI.ControlPlane.Editor
 
         private static void RestoreAfterDomainReload()
         {
-            if (IsRunning || !SessionState.GetBool(SessionEnabledKey, false))
+            if (IsRunning)
+            {
+                EditorApplication.update -= RetryRestoreWhenReady;
+                return;
+            }
+
+            var sessionEnabled = SessionState.GetBool(SessionEnabledKey, false);
+            var token = sessionEnabled
+                ? SessionState.GetString(SessionTokenKey, string.Empty)
+                : ReadDefaultDesktopToken();
+            if (!sessionEnabled && string.IsNullOrWhiteSpace(token))
             {
                 EditorApplication.update -= RetryRestoreWhenReady;
                 return;
@@ -169,7 +179,7 @@ namespace UnityAI.ControlPlane.Editor
 
             try
             {
-                StartInternal(SessionState.GetString(SessionTokenKey, string.Empty), false);
+                StartInternal(token, !sessionEnabled);
             }
             catch (Exception exception)
             {
@@ -185,6 +195,29 @@ namespace UnityAI.ControlPlane.Editor
 
                 Debug.LogError($"Unity AI bridge could not resume within 90 seconds after domain reload: {exception.Message}");
                 StopInternal(true);
+            }
+        }
+
+        private static string ReadDefaultDesktopToken()
+        {
+            if (Application.isBatchMode)
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                var tokenPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    ".config",
+                    "unity-ai",
+                    "bridge-token");
+                return File.Exists(tokenPath) ? File.ReadAllText(tokenPath).Trim() : string.Empty;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"Unity AI bridge could not read the desktop token: {exception.Message}");
+                return string.Empty;
             }
         }
 
