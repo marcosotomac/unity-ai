@@ -14,9 +14,44 @@ Terminal states are `succeeded`, `failed`, and `cancelled`. Successful jobs incl
 
 ## Tests and compilation
 
-- `unity.tests.run`: Edit Mode or Play Mode filters, confirmation, persistent state, XML results under `UnityAIArtifacts/TestResults`.
+- `unity.tests.run`: Edit Mode or Play Mode filters, confirmation, persistent state, XML results under `UnityAIArtifacts/TestResults`, and optional frame-timed keyboard/mouse/gamepad events for the new Input System.
+- `unity.physics.inspect`: bounded 3D/2D body and collider inspection, overlap diagnostics, relative impact speed, and sampled net-force estimates.
 - `unity.compilation.wait`: optional asset refresh, timeout, stable-frame settling, and maximum accepted console error count.
 - `unity.playmode.control`: `enter`, `exit`, `pause`, `resume`, or `step`.
+
+Console entries expose `classification` and `blocking`. Only `CompilationError` is blocking for compilation jobs; runtime, bridge, import, and warning diagnostics remain visible without causing unrelated compile waits to fail.
+
+Play Mode input sequences are relative to each leaf test's `TestStarted` callback and survive domain reload:
+
+```json
+{
+  "mode": "play",
+  "dryRun": false,
+  "confirm": true,
+  "inputStartDelayFrames": 1,
+  "inputEvents": [
+    {
+      "valueType": "button",
+      "frameOffset": 0,
+      "device": "keyboard",
+      "control": "w",
+      "action": "press",
+      "durationFrames": 30
+    },
+    {
+      "valueType": "vector2",
+      "frameOffset": 5,
+      "device": "mouse",
+      "control": "position",
+      "action": "set",
+      "x": 640,
+      "y": 360
+    }
+  ]
+}
+```
+
+Set `targetTest` on an event to restrict it to one exact fully qualified test name. Unscoped events replay for every selected leaf test.
 
 ## Android and Quest
 

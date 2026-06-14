@@ -16,6 +16,16 @@ Verified locally with:
 UNITY_PATH="/Applications/Unity/Hub/Editor/6000.4.9f1/Unity.app/Contents/MacOS/Unity" npm run verify:unity-package
 ```
 
+Compile and functionally verify the optional new Input System backend with:
+
+```bash
+UNITY_AI_VERIFY_INPUT_SYSTEM=1 \
+UNITY_PATH="/Applications/Unity/Hub/Editor/6000.4.9f1/Unity.app/Contents/MacOS/Unity" \
+npm run verify:unity-package
+```
+
+This variant installs `com.unity.inputsystem`, creates a virtual keyboard, injects a Space press, verifies the state change, and removes the device.
+
 The script creates a temporary Unity project, imports the local package, launches Unity in batchmode, and writes the Editor log to:
 
 ```text
@@ -27,6 +37,7 @@ artifacts/unity-verification/editor-compile.log
 - Unity package manifest can be imported.
 - Editor assembly definitions are valid.
 - C# Editor scripts compile against Unity APIs.
+- When enabled, the optional Input System assembly can inject and reset virtual-device state.
 
 ## What this does not verify yet
 
