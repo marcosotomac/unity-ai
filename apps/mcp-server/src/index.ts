@@ -168,14 +168,34 @@ server.registerTool(
 server.registerTool(
   "unity.scene.inspect",
   {
-    description: "Inspect the active Unity scene hierarchy at a high level.",
+    description: "Inspect a bounded, optionally filtered view of the active Unity scene hierarchy.",
     inputSchema: z.object({
       includeComponents: z.boolean().default(true),
       maxDepth: z.number().int().min(0).max(10).default(3),
-      maxGameObjects: z.number().int().min(1).max(1000).default(200)
-    })
+      maxGameObjects: z.number().int().min(1).max(1000).default(200),
+      filter: z.object({
+        nameContains: z.string().min(1).max(128).optional(),
+        pathPrefix: z.string().min(1).max(512).optional(),
+        componentType: z.string().min(1).max(256).optional(),
+        activeState: z.enum(["any", "active", "inactive"]).default("any"),
+        withinRadius: z.union([
+          z.object({
+            centerPath: z.string().min(1).max(512),
+            radius: z.number().finite().min(0).max(100000)
+          }).strict(),
+          z.object({
+            center: z.object({
+              x: z.number().finite(),
+              y: z.number().finite(),
+              z: z.number().finite()
+            }).strict(),
+            radius: z.number().finite().min(0).max(100000)
+          }).strict()
+        ]).optional()
+      }).strict().optional()
+    }).strict()
   },
-  async ({ includeComponents, maxDepth, maxGameObjects }) => bridgeTool("unity.scene.inspect", { includeComponents, maxDepth, maxGameObjects })
+  async (input) => bridgeTool("unity.scene.inspect", input)
 );
 
 server.registerTool(

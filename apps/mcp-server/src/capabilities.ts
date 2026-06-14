@@ -66,7 +66,7 @@ export const initialCapabilities: CapabilityManifest[] = [
   },
   {
     name: "unity.scene.inspect",
-    description: "Inspect the active scene hierarchy at a high level.",
+    description: "Inspect a bounded, optionally filtered view of the active scene hierarchy.",
     permissions: ["read_scenes"],
     effects: ["report_only"],
     verification: ["structured_observation"]

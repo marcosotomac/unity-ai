@@ -3676,7 +3676,7 @@
     },
     {
       "name": "unity.scene.inspect",
-      "description": "Inspect the active Unity scene hierarchy at a high level.",
+      "description": "Inspect a bounded, optionally filtered view of the active Unity scene hierarchy.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -3695,6 +3695,95 @@
             "minimum": 1,
             "maximum": 1000,
             "default": 200
+          },
+          "filter": {
+            "type": "object",
+            "properties": {
+              "nameContains": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "pathPrefix": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "componentType": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "activeState": {
+                "type": "string",
+                "enum": [
+                  "any",
+                  "active",
+                  "inactive"
+                ],
+                "default": "any"
+              },
+              "withinRadius": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "centerPath": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512
+                      },
+                      "radius": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 100000
+                      }
+                    },
+                    "required": [
+                      "centerPath",
+                      "radius"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "center": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "number"
+                          },
+                          "y": {
+                            "type": "number"
+                          },
+                          "z": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "z"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "radius": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 100000
+                      }
+                    },
+                    "required": [
+                      "center",
+                      "radius"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false,
