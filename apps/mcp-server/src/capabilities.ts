@@ -199,7 +199,7 @@ export const initialCapabilities: CapabilityManifest[] = [
   },
   {
     name: "unity.tests.run",
-    description: "Run Unity Edit Mode or Play Mode tests and persist XML results.",
+    description: "Run Unity Edit Mode or Play Mode tests, optionally inject frame-timed new Input System events, and persist XML results.",
     permissions: ["run_tests", "write_artifacts"],
     effects: ["test_execution", "write_artifacts"],
     verification: ["tests_passed", "test_results_available"]

@@ -25,6 +25,8 @@ namespace UnityAI.ControlPlane.Editor
         public string[] assemblyNames = Array.Empty<string>();
         public bool runSynchronously;
         public bool saveModifiedScenes;
+        public int inputStartDelayFrames = 1;
+        public InputSimulationEventInput[] inputEvents = Array.Empty<InputSimulationEventInput>();
     }
 
     public static class TestOperation
@@ -39,6 +41,11 @@ namespace UnityAI.ControlPlane.Editor
             if (mode != "edit" && mode != "play")
             {
                 return Rejected(input.dryRun, "mode must be edit or play.");
+            }
+
+            if (!ValidateInputSimulation(input, mode, out var inputError))
+            {
+                return Rejected(input.dryRun, inputError);
             }
 
             if (input.dryRun)
@@ -100,15 +107,22 @@ namespace UnityAI.ControlPlane.Editor
             var job = UnityAiJobStore.Create(Capability, "tests", envelope, requestBody, $"Queued {mode} mode test run.");
             try
             {
+                if (input.inputEvents.Length > 0)
+                {
+                    InputSimulationScheduler.Register(job.jobId, input.inputEvents, input.inputStartDelayFrames);
+                }
+
                 var started = startMethod.Invoke(null, new object[] { job.jobId, requestBody }) is bool result && result;
                 if (!started)
                 {
+                    InputSimulationScheduler.Cancel(job.jobId);
                     UnityAiJobStore.Fail(job.jobId, "Unity Test Framework rejected the test run.");
                     return Rejected(false, "Unity Test Framework rejected the test run.");
                 }
             }
             catch (Exception exception)
             {
+                InputSimulationScheduler.Cancel(job.jobId);
                 UnityAiJobStore.Fail(job.jobId, exception.GetBaseException().Message);
                 return Rejected(false, exception.GetBaseException().Message);
             }
@@ -126,9 +140,52 @@ namespace UnityAI.ControlPlane.Editor
 
         public static bool Cancel(string jobId)
         {
+            InputSimulationScheduler.Cancel(jobId);
             var adapterType = Type.GetType(AdapterTypeName, false);
             var method = adapterType?.GetMethod("Cancel", BindingFlags.Public | BindingFlags.Static);
             return method != null && method.Invoke(null, new object[] { jobId }) is bool result && result;
+        }
+
+        private static bool ValidateInputSimulation(TestRunInput input, string mode, out string error)
+        {
+            var events = input.inputEvents ?? Array.Empty<InputSimulationEventInput>();
+            input.inputEvents = events;
+            if (events.Length == 0)
+            {
+                error = string.Empty;
+                return true;
+            }
+
+            if (mode != "play")
+            {
+                error = "inputEvents are supported only for Play Mode tests.";
+                return false;
+            }
+
+            if (events.Length > 500)
+            {
+                error = "inputEvents cannot contain more than 500 events.";
+                return false;
+            }
+
+            if (!InputSimulationScheduler.IsAvailable())
+            {
+                error = "New Input System simulation is unavailable. Install com.unity.inputsystem and recompile.";
+                return false;
+            }
+
+            input.inputStartDelayFrames = Math.Max(0, Math.Min(input.inputStartDelayFrames, 10000));
+            for (var index = 0; index < events.Length; index++)
+            {
+                if (!InputSimulationScheduler.Validate(events[index], out error))
+                {
+                    error = $"inputEvents[{index}]: {error}";
+                    return false;
+                }
+            }
+
+            error = string.Empty;
+            return true;
         }
 
         private static UnityAiJobStartResult Rejected(bool dryRun, string message)

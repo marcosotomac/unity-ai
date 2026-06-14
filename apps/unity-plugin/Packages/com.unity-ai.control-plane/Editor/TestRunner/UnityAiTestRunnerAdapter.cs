@@ -30,6 +30,9 @@ namespace UnityAI.ControlPlane.Editor.Testing
         public double durationSeconds;
         public string resultState;
         public string resultPath;
+        public int requestedInputEventCount;
+        public int executedInputActionCount;
+        public string inputSimulationError;
         public TestFailureInfo[] failures = Array.Empty<TestFailureInfo>();
         public string completedAtUtc;
     }
@@ -154,14 +157,21 @@ namespace UnityAI.ControlPlane.Editor.Testing
                     failures = failures.ToArray(),
                     completedAtUtc = DateTime.UtcNow.ToString("O")
                 };
+                var inputReport = InputSimulationScheduler.Finish(_jobId);
+                summary.requestedInputEventCount = inputReport.requestedEventCount;
+                summary.executedInputActionCount = inputReport.executedActionCount;
+                summary.inputSimulationError = inputReport.error;
 
-                if (result.FailCount == 0)
+                if (result.FailCount == 0 && string.IsNullOrWhiteSpace(summary.inputSimulationError))
                 {
                     UnityAiJobStore.Complete(_jobId, summary, $"{_mode} mode tests passed.", "tests_passed", "test_results_available");
                 }
                 else
                 {
-                    UnityAiJobStore.Fail(_jobId, $"{result.FailCount} test(s) failed.", summary, "test_results_available");
+                    var message = !string.IsNullOrWhiteSpace(summary.inputSimulationError)
+                        ? $"Input simulation failed: {summary.inputSimulationError}"
+                        : $"{result.FailCount} test(s) failed.";
+                    UnityAiJobStore.Fail(_jobId, message, summary, "test_results_available");
                 }
             }
             catch (Exception exception)
@@ -170,6 +180,7 @@ namespace UnityAI.ControlPlane.Editor.Testing
             }
             finally
             {
+                InputSimulationScheduler.Cancel(_jobId);
                 _api.UnregisterCallbacks(this);
                 UnityEngine.Object.DestroyImmediate(_api);
                 Active.Remove(_jobId);
@@ -178,11 +189,20 @@ namespace UnityAI.ControlPlane.Editor.Testing
 
         public void TestStarted(ITestAdaptor test)
         {
+            if (!test.IsSuite)
+            {
+                InputSimulationScheduler.ActivateForTest(_jobId, test.FullName);
+            }
+
             UnityAiJobStore.UpdateProgress(_jobId, "running", $"Running {test.FullName}.", 0.5f);
         }
 
         public void TestFinished(ITestResultAdaptor result)
         {
+            if (!result.HasChildren)
+            {
+                InputSimulationScheduler.CompleteTest(_jobId, result.FullName);
+            }
         }
 
         private static void CollectFailures(ITestResultAdaptor result, List<TestFailureInfo> output, int limit)

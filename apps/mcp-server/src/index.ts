@@ -630,7 +630,7 @@ server.registerTool(
 server.registerTool(
   "unity.tests.run",
   {
-    description: "Run Unity Edit Mode or Play Mode tests and persist an XML result artifact.",
+    description: "Run Unity Edit Mode or Play Mode tests, optionally inject frame-timed new Input System events, and persist an XML result artifact.",
     inputSchema: z.object({
       dryRun: z.boolean().default(true),
       confirm: z.boolean().default(false),
@@ -640,7 +640,38 @@ server.registerTool(
       categoryNames: z.array(z.string().min(1).max(256)).max(100).default([]),
       assemblyNames: z.array(z.string().min(1).max(256)).max(100).default([]),
       runSynchronously: z.boolean().default(false),
-      saveModifiedScenes: z.boolean().default(false)
+      saveModifiedScenes: z.boolean().default(false),
+      inputStartDelayFrames: z.number().int().min(0).max(10000).default(1),
+      inputEvents: z.array(z.discriminatedUnion("valueType", [
+        z.object({
+          valueType: z.literal("button"),
+          frameOffset: z.number().int().min(0).max(100000),
+          targetTest: z.string().min(1).max(512).optional(),
+          device: z.enum(["keyboard", "mouse", "gamepad"]),
+          control: z.string().min(1).max(128),
+          action: z.enum(["press", "release"]),
+          durationFrames: z.number().int().min(1).max(100000).default(1)
+        }).strict(),
+        z.object({
+          valueType: z.literal("axis"),
+          frameOffset: z.number().int().min(0).max(100000),
+          targetTest: z.string().min(1).max(512).optional(),
+          device: z.enum(["mouse", "gamepad"]),
+          control: z.string().min(1).max(128),
+          action: z.literal("set"),
+          value: z.number().finite().min(-100000).max(100000)
+        }).strict(),
+        z.object({
+          valueType: z.literal("vector2"),
+          frameOffset: z.number().int().min(0).max(100000),
+          targetTest: z.string().min(1).max(512).optional(),
+          device: z.enum(["mouse", "gamepad"]),
+          control: z.string().min(1).max(128),
+          action: z.literal("set"),
+          x: z.number().finite().min(-100000).max(100000),
+          y: z.number().finite().min(-100000).max(100000)
+        }).strict()
+      ])).max(500).default([])
     }).strict()
   },
   async (input) => bridgeTool("unity.tests.run", input)

@@ -4190,7 +4190,7 @@
     },
     {
       "name": "unity.tests.run",
-      "description": "Run Unity Edit Mode or Play Mode tests and persist an XML result artifact.",
+      "description": "Run Unity Edit Mode or Play Mode tests, optionally inject frame-timed new Input System events, and persist an XML result artifact.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -4257,6 +4257,178 @@
           "saveModifiedScenes": {
             "type": "boolean",
             "default": false
+          },
+          "inputStartDelayFrames": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000,
+            "default": 1
+          },
+          "inputEvents": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "valueType": {
+                      "type": "string",
+                      "const": "button"
+                    },
+                    "frameOffset": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 100000
+                    },
+                    "targetTest": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "device": {
+                      "type": "string",
+                      "enum": [
+                        "keyboard",
+                        "mouse",
+                        "gamepad"
+                      ]
+                    },
+                    "control": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "press",
+                        "release"
+                      ]
+                    },
+                    "durationFrames": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100000,
+                      "default": 1
+                    }
+                  },
+                  "required": [
+                    "valueType",
+                    "frameOffset",
+                    "device",
+                    "control",
+                    "action"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "valueType": {
+                      "type": "string",
+                      "const": "axis"
+                    },
+                    "frameOffset": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 100000
+                    },
+                    "targetTest": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "device": {
+                      "type": "string",
+                      "enum": [
+                        "mouse",
+                        "gamepad"
+                      ]
+                    },
+                    "control": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "action": {
+                      "type": "string",
+                      "const": "set"
+                    },
+                    "value": {
+                      "type": "number",
+                      "minimum": -100000,
+                      "maximum": 100000
+                    }
+                  },
+                  "required": [
+                    "valueType",
+                    "frameOffset",
+                    "device",
+                    "control",
+                    "action",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "valueType": {
+                      "type": "string",
+                      "const": "vector2"
+                    },
+                    "frameOffset": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 100000
+                    },
+                    "targetTest": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "device": {
+                      "type": "string",
+                      "enum": [
+                        "mouse",
+                        "gamepad"
+                      ]
+                    },
+                    "control": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "action": {
+                      "type": "string",
+                      "const": "set"
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": -100000,
+                      "maximum": 100000
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": -100000,
+                      "maximum": 100000
+                    }
+                  },
+                  "required": [
+                    "valueType",
+                    "frameOffset",
+                    "device",
+                    "control",
+                    "action",
+                    "x",
+                    "y"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "maxItems": 500,
+            "default": []
           }
         },
         "additionalProperties": false,
