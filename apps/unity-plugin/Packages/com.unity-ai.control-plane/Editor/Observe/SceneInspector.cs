@@ -216,7 +216,7 @@ namespace UnityAI.ControlPlane.Editor
             var hasActiveState = activeState == "active" || activeState == "inactive";
             filter.activeState = hasActiveState ? activeState : "any";
 
-            return hasName || hasPath || hasComponent || hasActiveState || filter.withinRadius != null
+            return hasName || hasPath || hasComponent || hasActiveState || HasRadiusFilter(filter.withinRadius)
                 ? filter
                 : null;
         }
@@ -224,7 +224,7 @@ namespace UnityAI.ControlPlane.Editor
         private static Vector3? ResolveRadiusCenter(SceneInspectFilterInput filter)
         {
             var radiusFilter = filter?.withinRadius;
-            if (radiusFilter == null)
+            if (!HasRadiusFilter(radiusFilter))
             {
                 return null;
             }
@@ -240,12 +240,13 @@ namespace UnityAI.ControlPlane.Editor
                 return centerObject.transform.position;
             }
 
-            if (radiusFilter.center == null)
-            {
-                throw new InvalidOperationException("Radius filter requires centerPath or center.");
-            }
-
             return new Vector3(radiusFilter.center.x, radiusFilter.center.y, radiusFilter.center.z);
+        }
+
+        private static bool HasRadiusFilter(SceneRadiusFilterInput radiusFilter)
+        {
+            return radiusFilter != null
+                && (!string.IsNullOrWhiteSpace(radiusFilter.centerPath) || radiusFilter.center != null);
         }
 
         private static bool MatchesFilter(GameObject gameObject, string path, SceneInspectFilterInput filter, float distanceFromFilterCenter)
@@ -282,7 +283,8 @@ namespace UnityAI.ControlPlane.Editor
                 return false;
             }
 
-            return filter.withinRadius == null || distanceFromFilterCenter <= Math.Max(0f, filter.withinRadius.radius);
+            return !HasRadiusFilter(filter.withinRadius)
+                || distanceFromFilterCenter <= Math.Max(0f, filter.withinRadius.radius);
         }
 
         private static bool HasComponentType(GameObject gameObject, string requestedType)

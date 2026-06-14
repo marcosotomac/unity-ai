@@ -75,6 +75,8 @@ namespace UnityAI.ControlPlane.Editor
         public int layer;
         public string layerName;
         public SceneVector3 worldPosition;
+        public bool hasBody3D;
+        public bool hasBody2D;
         public PhysicsBodyInfo body3D;
         public PhysicsBodyInfo body2D;
         public PhysicsColliderInfo[] colliders3D;
@@ -260,6 +262,8 @@ namespace UnityAI.ControlPlane.Editor
                             layer = gameObject.layer,
                             layerName = LayerMask.LayerToName(gameObject.layer),
                             worldPosition = ToSceneVector3(gameObject.transform.position),
+                            hasBody3D = body3D != null,
+                            hasBody2D = body2D != null,
                             body3D = BuildBodyInfo(body3D),
                             body2D = BuildBodyInfo(body2D),
                             colliders3D = colliderInfos3D,
@@ -687,7 +691,9 @@ namespace UnityAI.ControlPlane.Editor
 
         private static Vector3? ResolveRadiusCenter(SceneRadiusFilterInput filter)
         {
-            if (filter == null)
+            if (filter == null
+                || string.IsNullOrWhiteSpace(filter.centerPath)
+                && filter.center == null)
             {
                 return null;
             }
@@ -701,11 +707,6 @@ namespace UnityAI.ControlPlane.Editor
                 }
 
                 return target.transform.position;
-            }
-
-            if (filter.center == null)
-            {
-                throw new InvalidOperationException("Physics radius filter requires centerPath or center.");
             }
 
             return new Vector3(filter.center.x, filter.center.y, filter.center.z);
