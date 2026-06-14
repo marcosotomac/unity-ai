@@ -581,6 +581,8 @@ namespace UnityAI.ControlPlane.Editor
                     return JsonResult(capability, envelope, SceneInspector.InspectActiveScene(requestBody));
                 case "unity.scene.inspect_game_object":
                     return JsonResult(capability, envelope, GameObjectInspector.Inspect(requestBody));
+                case "unity.physics.inspect":
+                    return JsonResult(capability, envelope, PhysicsInspector.Inspect(requestBody));
                 case "unity.scene.upsert_game_object":
                     return JsonResult(capability, envelope, SceneUpsertGameObjectOperation.Execute(requestBody));
                 case "unity.scene.batch":

@@ -79,6 +79,13 @@ export const initialCapabilities: CapabilityManifest[] = [
     verification: ["structured_observation"]
   },
   {
+    name: "unity.physics.inspect",
+    description: "Inspect bounded 3D/2D physics state, collider alignment, penetrations, relative impact speeds, and sampled net-force estimates.",
+    permissions: ["read_scenes"],
+    effects: ["report_only"],
+    verification: ["structured_observation"]
+  },
+  {
     name: "unity.scene.upsert_game_object",
     description: "Create or update a GameObject in the active scene from a safe, schema-bound spec.",
     permissions: ["modify_scenes"],

@@ -2042,6 +2042,110 @@
       }
     },
     {
+      "name": "unity.physics.inspect",
+      "description": "Inspect bounded 3D/2D physics state, collider alignment, penetrations, relative impact speeds, and sampled net-force estimates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pathPrefix": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "includeInactive": {
+            "type": "boolean",
+            "default": false
+          },
+          "dimension": {
+            "type": "string",
+            "enum": [
+              "all",
+              "3d",
+              "2d"
+            ],
+            "default": "all"
+          },
+          "withinRadius": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "centerPath": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "radius": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100000
+                  }
+                },
+                "required": [
+                  "centerPath",
+                  "radius"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "center": {
+                    "type": "object",
+                    "properties": {
+                      "x": {
+                        "type": "number"
+                      },
+                      "y": {
+                        "type": "number"
+                      },
+                      "z": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "x",
+                      "y",
+                      "z"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "radius": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100000
+                  }
+                },
+                "required": [
+                  "center",
+                  "radius"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "includeOverlapDiagnostics": {
+            "type": "boolean",
+            "default": true
+          },
+          "maxObjects": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 200
+          },
+          "maxOverlaps": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000,
+            "default": 200
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
       "name": "unity.playmode.control",
       "description": "Enter, exit, pause, resume, or step Unity Play Mode as a persistent job.",
       "parameters": {

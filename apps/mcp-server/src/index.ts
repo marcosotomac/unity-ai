@@ -212,6 +212,36 @@ server.registerTool(
   async (input) => bridgeTool("unity.scene.inspect_game_object", input)
 );
 
+server.registerTool(
+  "unity.physics.inspect",
+  {
+    description: "Inspect bounded 3D/2D physics state, collider alignment, penetrations, relative impact speeds, and sampled net-force estimates.",
+    inputSchema: z.object({
+      pathPrefix: z.string().min(1).max(512).optional(),
+      includeInactive: z.boolean().default(false),
+      dimension: z.enum(["all", "3d", "2d"]).default("all"),
+      withinRadius: z.union([
+        z.object({
+          centerPath: z.string().min(1).max(512),
+          radius: z.number().finite().min(0).max(100000)
+        }).strict(),
+        z.object({
+          center: z.object({
+            x: z.number().finite(),
+            y: z.number().finite(),
+            z: z.number().finite()
+          }).strict(),
+          radius: z.number().finite().min(0).max(100000)
+        }).strict()
+      ]).optional(),
+      includeOverlapDiagnostics: z.boolean().default(true),
+      maxObjects: z.number().int().min(1).max(500).default(200),
+      maxOverlaps: z.number().int().min(0).max(1000).default(200)
+    }).strict()
+  },
+  async (input) => bridgeTool("unity.physics.inspect", input)
+);
+
 const sceneVectorSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
