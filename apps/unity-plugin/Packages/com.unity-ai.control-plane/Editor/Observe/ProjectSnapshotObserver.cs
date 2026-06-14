@@ -18,6 +18,7 @@ namespace UnityAI.ControlPlane.Editor
         public ProjectSnapshotAssemblies assemblies = new();
         public ProjectSnapshotPackages packages = new();
         public ProjectSettingsReport settings = new();
+        public ProjectEnvironmentReport environment = new();
         public ProjectSnapshotMetaXr metaXr = new();
         public ProjectSnapshotArtifacts artifacts = new();
         public ProjectSnapshotCapability[] capabilities = Array.Empty<ProjectSnapshotCapability>();
@@ -149,6 +150,7 @@ namespace UnityAI.ControlPlane.Editor
             TryCapture("assemblies", failures, () => snapshot.assemblies = CaptureAssemblies());
             TryCapture("packages", failures, () => snapshot.packages = CapturePackages());
             TryCapture("settings", failures, () => snapshot.settings = ProjectSettingsInspector.Inspect());
+            TryCapture("environment", failures, () => snapshot.environment = ProjectEnvironmentInspector.Inspect());
             TryCapture("meta_xr", failures, () => snapshot.metaXr = CaptureMetaXr());
             TryCapture("artifacts", failures, () => snapshot.artifacts = CaptureArtifacts());
 
@@ -426,6 +428,16 @@ namespace UnityAI.ControlPlane.Editor
                 flags.Add("partial_snapshot");
             }
 
+            if (snapshot.environment.renderPipeline.kind == "custom")
+            {
+                flags.Add("custom_render_pipeline");
+            }
+
+            if (snapshot.environment.inputSystem.inputSystemPackageEnabled && !snapshot.environment.inputSystem.inputSystemPackageInstalled)
+            {
+                flags.Add("input_system_package_missing");
+            }
+
             return flags;
         }
 
@@ -449,6 +461,11 @@ namespace UnityAI.ControlPlane.Editor
                 actions.Add("run unity.meta_xr.validate_setup");
             }
 
+            if (snapshot.environment.inputSystem.mode == "unknown")
+            {
+                actions.Add("verify Active Input Handling before generating runtime input code");
+            }
+
             if (actions.Count == 0)
             {
                 actions.Add("inspect active scene before acting");
@@ -459,7 +476,7 @@ namespace UnityAI.ControlPlane.Editor
 
         private static List<string> BuildVerificationSignals(ProjectContextSnapshot snapshot)
         {
-            var signals = new List<string> { "structured_observation", "console_snapshot", "console_diagnostics" };
+            var signals = new List<string> { "structured_observation", "console_snapshot", "console_diagnostics", "environment_introspected" };
 
             if (snapshot.console.errorCount == 0)
             {

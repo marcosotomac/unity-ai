@@ -210,7 +210,7 @@ try {
 
   assertCapabilities(await callJsonTool(client, "unity.capabilities.list", {}));
   await assertApplyFixFlow(client);
-  await callJsonTool(client, "unity.project.inspect", {});
+  assertProjectInspect(await callJsonTool(client, "unity.project.inspect", {}));
   await callJsonTool(client, "unity.console.read", {});
   assertConsoleDiagnostics(await waitForConsoleDiagnostics(client, 60_000));
   assertConsoleFixPlans(await callJsonTool(client, "unity.console.plan_fix", {}));
@@ -2690,6 +2690,24 @@ function assertProjectSettings(report) {
   }
 }
 
+function assertProjectInspect(report) {
+  if (!report?.renderPipeline || !["built_in", "urp", "hdrp", "custom"].includes(report.renderPipeline.kind)) {
+    fail(`unity.project.inspect returned an invalid render pipeline environment: ${JSON.stringify(report?.renderPipeline)}.`);
+  }
+
+  if (typeof report.renderPipeline.recommendedShader !== "string" || report.renderPipeline.recommendedShader.length === 0) {
+    fail("unity.project.inspect must expose a recommended shader for the effective render pipeline.");
+  }
+
+  if (!report?.inputSystem || !["legacy", "input_system", "both", "unknown"].includes(report.inputSystem.mode)) {
+    fail(`unity.project.inspect returned an invalid input system environment: ${JSON.stringify(report?.inputSystem)}.`);
+  }
+
+  if (typeof report.inputSystem.recommendedApi !== "string" || report.inputSystem.recommendedApi.length === 0 || !Array.isArray(report.compatibilityWarnings)) {
+    fail("unity.project.inspect must expose input API guidance and compatibility warnings.");
+  }
+}
+
 function assertProjectSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== "object") {
     fail("unity.project.snapshot returned an invalid snapshot shape.");
@@ -2736,6 +2754,10 @@ function assertProjectSnapshot(snapshot) {
     fail("unity.project.snapshot returned an invalid bounded packages summary.");
   }
 
+  if (!snapshot.environment?.renderPipeline || !snapshot.environment?.inputSystem || !Array.isArray(snapshot.environment.compatibilityWarnings)) {
+    fail(`unity.project.snapshot returned an invalid mandatory environment summary: ${JSON.stringify(snapshot.environment)}.`);
+  }
+
   if (!snapshot.metaXr || typeof snapshot.metaXr.likelyMetaXrInstalled !== "boolean" || !Array.isArray(snapshot.metaXr.findings) || snapshot.metaXr.findings.length > 10) {
     fail("unity.project.snapshot returned an invalid Meta XR summary.");
   }
@@ -2756,7 +2778,7 @@ function assertProjectSnapshot(snapshot) {
     fail(`unity.project.snapshot did not include fact-based recommended actions: ${JSON.stringify(snapshot.recommendedNextActions)}.`);
   }
 
-  if (!Array.isArray(snapshot.verificationSignals) || !snapshot.verificationSignals.includes("structured_observation") || !snapshot.verificationSignals.includes("console_diagnostics")) {
+  if (!Array.isArray(snapshot.verificationSignals) || !snapshot.verificationSignals.includes("structured_observation") || !snapshot.verificationSignals.includes("console_diagnostics") || !snapshot.verificationSignals.includes("environment_introspected")) {
     fail(`unity.project.snapshot did not include expected verification signals: ${JSON.stringify(snapshot.verificationSignals)}.`);
   }
 
