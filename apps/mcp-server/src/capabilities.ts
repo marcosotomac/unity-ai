@@ -254,6 +254,20 @@ export const initialCapabilities: CapabilityManifest[] = [
     verification: ["checkpoint_created", "operation_audited", "asset_import_verified", "scene_mutation_verified", "prefab_mutation_verified"]
   },
   {
+    name: "unity.assets.catalog.search",
+    description: "Search license-allowlisted asset catalogs with provenance, size, format, and SHA-256 metadata.",
+    permissions: ["network_access", "read_external_files"],
+    effects: ["report_only"],
+    verification: ["structured_observation", "asset_license_verified", "asset_hash_available"]
+  },
+  {
+    name: "unity.assets.import_from_catalog",
+    description: "Resolve and import a catalog asset with enforced license, provenance, byte limit, and SHA-256 verification.",
+    permissions: ["network_access", "read_external_files", "read_assets", "modify_assets", "modify_scenes", "write_artifacts"],
+    effects: ["write_checkpoint", "write_audit_log", "asset_change", "scene_change"],
+    verification: ["asset_license_verified", "asset_hash_verified", "checkpoint_created", "operation_audited", "asset_import_verified", "scene_mutation_verified", "prefab_mutation_verified"]
+  },
+  {
     name: "unity.prefab.manage",
     description: "Save, edit, variant, apply, and revert prefabs with durable checkpoints.",
     permissions: ["read_assets", "read_scenes", "modify_assets", "modify_scenes", "write_artifacts"],

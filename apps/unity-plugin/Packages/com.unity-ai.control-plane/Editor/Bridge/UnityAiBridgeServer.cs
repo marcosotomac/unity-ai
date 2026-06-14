@@ -598,6 +598,8 @@ namespace UnityAI.ControlPlane.Editor
                     return JsonResult(capability, envelope, AssetAuthoringOperation.Execute(requestBody));
                 case "unity.assets.import":
                     return JsonResult(capability, envelope, AssetImportOperation.Execute(requestBody));
+                case "unity.assets.import_from_catalog":
+                    return JsonResult(capability, envelope, AssetImportOperation.Execute(requestBody, capability));
                 case "unity.prefab.manage":
                     return JsonResult(capability, envelope, PrefabAssetOperation.Execute(requestBody));
                 case "unity.checkpoints.create":
@@ -688,6 +690,7 @@ namespace UnityAI.ControlPlane.Editor
                 case "unity.build.android":
                 case "unity.assets.author":
                 case "unity.assets.import":
+                case "unity.assets.import_from_catalog":
                 case "unity.scripts.author":
                 case "unity.prefab.manage":
                 case "unity.checkpoints.create":

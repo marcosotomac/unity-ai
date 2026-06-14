@@ -511,6 +511,52 @@
       }
     },
     {
+      "name": "unity.assets.catalog.search",
+      "description": "Search bundled and configured CDN asset catalogs whose entries include license, provenance, byte size, and SHA-256 metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 200,
+            "default": ""
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "all",
+              "model",
+              "texture",
+              "audio"
+            ],
+            "default": "all"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "maxItems": 20,
+            "default": []
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "refresh": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
       "name": "unity.assets.import",
       "description": "Copy or download a model, texture, or audio file, apply importer settings, and optionally instantiate it or save a prefab.",
       "parameters": {
@@ -787,6 +833,277 @@
           }
         },
         "required": [
+          "destinationPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.assets.import_from_catalog",
+      "description": "Resolve a license-allowlisted catalog asset, enforce its declared SHA-256 and size, import it through Unity, and retain provenance in the audit result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "catalogAssetId": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 256
+          },
+          "expectedCatalogSha256": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          },
+          "refreshCatalog": {
+            "type": "boolean",
+            "default": false
+          },
+          "destinationPath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "overwrite": {
+            "type": "boolean",
+            "default": false
+          },
+          "maxBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483648,
+            "default": 268435456
+          },
+          "timeoutSeconds": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 1800,
+            "default": 120
+          },
+          "model": {
+            "type": "object",
+            "properties": {
+              "globalScale": {
+                "type": "number",
+                "minimum": 0.0001,
+                "maximum": 10000,
+                "default": 1
+              },
+              "useFileScale": {
+                "type": "boolean",
+                "default": true
+              },
+              "importBlendShapes": {
+                "type": "boolean",
+                "default": true
+              },
+              "importVisibility": {
+                "type": "boolean",
+                "default": true
+              },
+              "importCameras": {
+                "type": "boolean",
+                "default": false
+              },
+              "importLights": {
+                "type": "boolean",
+                "default": false
+              },
+              "addCollider": {
+                "type": "boolean",
+                "default": false
+              },
+              "importAnimation": {
+                "type": "boolean",
+                "default": true
+              },
+              "animationType": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "legacy",
+                  "generic",
+                  "human"
+                ],
+                "default": "generic"
+              },
+              "isReadable": {
+                "type": "boolean",
+                "default": false
+              },
+              "meshCompression": {
+                "type": "string",
+                "enum": [
+                  "off",
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "default": "off"
+              }
+            },
+            "additionalProperties": false
+          },
+          "texture": {
+            "type": "object",
+            "properties": {
+              "textureType": {
+                "type": "string",
+                "enum": [
+                  "default",
+                  "normal_map",
+                  "sprite",
+                  "cursor",
+                  "cookie",
+                  "lightmap",
+                  "single_channel"
+                ],
+                "default": "default"
+              },
+              "sRgb": {
+                "type": "boolean",
+                "default": true
+              },
+              "alphaIsTransparency": {
+                "type": "boolean",
+                "default": false
+              },
+              "mipmapEnabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "isReadable": {
+                "type": "boolean",
+                "default": false
+              },
+              "maxTextureSize": {
+                "type": "integer",
+                "minimum": 32,
+                "maximum": 16384,
+                "default": 2048
+              },
+              "compression": {
+                "type": "string",
+                "enum": [
+                  "uncompressed",
+                  "compressed",
+                  "compressed_hq",
+                  "compressed_lq"
+                ],
+                "default": "compressed"
+              }
+            },
+            "additionalProperties": false
+          },
+          "audio": {
+            "type": "object",
+            "properties": {
+              "forceToMono": {
+                "type": "boolean",
+                "default": false
+              },
+              "loadInBackground": {
+                "type": "boolean",
+                "default": false
+              },
+              "preloadAudioData": {
+                "type": "boolean",
+                "default": true
+              },
+              "loadType": {
+                "type": "string",
+                "enum": [
+                  "decompress_on_load",
+                  "compressed_in_memory",
+                  "streaming"
+                ],
+                "default": "decompress_on_load"
+              },
+              "compressionFormat": {
+                "type": "string",
+                "enum": [
+                  "vorbis",
+                  "pcm",
+                  "adpcm"
+                ],
+                "default": "vorbis"
+              },
+              "quality": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "default": 0.7
+              },
+              "sampleRateOverride": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 192000,
+                "default": 0
+              }
+            },
+            "additionalProperties": false
+          },
+          "instantiate": {
+            "type": "boolean",
+            "default": false
+          },
+          "objectName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "parentPath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "transform": {
+            "type": "object",
+            "properties": {
+              "position": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  },
+                  "z": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "z"
+                ],
+                "additionalProperties": false
+              },
+              "rotationEuler": {
+                "$ref": "#/properties/transform/properties/position"
+              },
+              "scale": {
+                "$ref": "#/properties/transform/properties/position"
+              }
+            },
+            "additionalProperties": false
+          },
+          "saveAsPrefabPath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "catalogAssetId",
           "destinationPath"
         ],
         "additionalProperties": false,

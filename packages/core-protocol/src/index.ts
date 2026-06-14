@@ -71,6 +71,9 @@ export type VerificationSignal =
   | "audit_report_generated"
   | "evidence_hash_verified"
   | "asset_import_verified"
+  | "asset_license_verified"
+  | "asset_hash_available"
+  | "asset_hash_verified"
   | "script_source_validated"
   | "script_compilation_verified"
   | "gameplay_template_applied";

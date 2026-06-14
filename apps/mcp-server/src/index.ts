@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
+import { AssetCatalogService, parseAllowedLicenses, parseCatalogList, toPublicCatalogAsset } from "./asset-catalog.js";
 import { initialCapabilities } from "./capabilities.js";
 import { UnityBridgeClient } from "./unity-bridge-client.js";
 
@@ -15,6 +16,11 @@ const bridge = new UnityBridgeClient({
     baseDelayMs: parsePositiveInteger(process.env.UNITY_AI_BRIDGE_RETRY_BASE_DELAY_MS, 150),
     maxDelayMs: parsePositiveInteger(process.env.UNITY_AI_BRIDGE_RETRY_MAX_DELAY_MS, 3_000)
   }
+});
+const assetCatalog = new AssetCatalogService({
+  manifestUrls: parseCatalogList(process.env.UNITY_AI_ASSET_CATALOG_URLS),
+  allowedLicenses: parseAllowedLicenses(process.env.UNITY_AI_ASSET_CATALOG_ALLOWED_LICENSES),
+  allowInsecureLocalhost: process.env.UNITY_AI_CATALOG_ALLOW_INSECURE_LOCALHOST === "1"
 });
 
 const server = new McpServer({
@@ -779,6 +785,27 @@ const textureImportSettingsSchema = z.object({
 }).strict();
 
 server.registerTool(
+  "unity.assets.catalog.search",
+  {
+    description: "Search bundled and configured CDN asset catalogs whose entries include license, provenance, byte size, and SHA-256 metadata.",
+    inputSchema: z.object({
+      query: z.string().max(200).default(""),
+      kind: z.enum(["all", "model", "texture", "audio"]).default("all"),
+      tags: z.array(z.string().min(1).max(64)).max(20).default([]),
+      maxResults: z.number().int().min(1).max(200).default(50),
+      refresh: z.boolean().default(false)
+    }).strict()
+  },
+  async (input) => {
+    try {
+      return jsonToolResult(await assetCatalog.search(input));
+    } catch (error) {
+      return errorToolResult(error);
+    }
+  }
+);
+
+server.registerTool(
   "unity.assets.import",
   {
     description: "Copy or download a model, texture, or audio file, apply importer settings, and optionally instantiate it or save a prefab.",
@@ -809,6 +836,91 @@ server.registerTool(
     }).strict()
   },
   async (input) => bridgeTool("unity.assets.import", input)
+);
+
+server.registerTool(
+  "unity.assets.import_from_catalog",
+  {
+    description: "Resolve a license-allowlisted catalog asset, enforce its declared SHA-256 and size, import it through Unity, and retain provenance in the audit result.",
+    inputSchema: z.object({
+      dryRun: z.boolean().default(true),
+      confirm: z.boolean().default(false),
+      catalogAssetId: z.string().min(3).max(256),
+      expectedCatalogSha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
+      refreshCatalog: z.boolean().default(false),
+      destinationPath: z.string().min(1).max(512),
+      overwrite: z.boolean().default(false),
+      maxBytes: z.number().int().min(1).max(2_147_483_648).default(268_435_456),
+      timeoutSeconds: z.number().int().min(5).max(1800).default(120),
+      model: modelImportSettingsSchema.optional(),
+      texture: textureImportSettingsSchema.optional(),
+      audio: audioImportSchema.optional(),
+      instantiate: z.boolean().default(false),
+      objectName: z.string().min(1).max(80).optional(),
+      parentPath: z.string().min(1).max(512).optional(),
+      transform: z.object({
+        position: sceneVectorSchema.optional(),
+        rotationEuler: sceneVectorSchema.optional(),
+        scale: sceneVectorSchema.optional()
+      }).strict().optional(),
+      saveAsPrefabPath: z.string().min(1).max(512).optional()
+    }).strict()
+  },
+  async (input) => {
+    try {
+      const asset = await assetCatalog.resolve(input.catalogAssetId, input.refreshCatalog);
+      if (input.expectedCatalogSha256
+          && input.expectedCatalogSha256.toLowerCase() !== asset.sha256) {
+        return errorToolResult(new Error(`Catalog SHA-256 changed for '${asset.assetId}'. Search the catalog again before confirming the import.`));
+      }
+
+      if (input.maxBytes < asset.sizeBytes) {
+        return errorToolResult(new Error(`Catalog asset '${asset.assetId}' declares ${asset.sizeBytes} bytes, exceeding maxBytes=${input.maxBytes}.`));
+      }
+
+      const destinationFormat = input.destinationPath.split(".").pop()?.toLowerCase();
+      if (destinationFormat !== asset.format) {
+        return errorToolResult(new Error(`destinationPath must end in .${asset.format} for catalog asset '${asset.assetId}'.`));
+      }
+
+      const { catalogAssetId: _catalogAssetId, expectedCatalogSha256: _expectedHash, refreshCatalog: _refresh, ...importInput } = input;
+      const sourceInput = asset.source.kind === "local"
+        ? { sourceKind: "local", sourcePath: asset.source.path }
+        : {
+            sourceKind: "url",
+            url: asset.source.url,
+            allowInsecureLocalhost: asset.source.allowInsecureLocalhost
+          };
+      const response = await bridge.call("unity.assets.import_from_catalog", {
+        ...importInput,
+        ...sourceInput,
+        expectedSha256: asset.sha256,
+        catalogProvenance: {
+          catalogId: asset.catalogId,
+          catalogAssetId: asset.assetId,
+          catalogName: asset.catalogName,
+          catalogHomepage: asset.catalogHomepage,
+          sourceUrl: asset.sourceUrl,
+          licenseSpdxId: asset.license.spdxId,
+          licenseName: asset.license.name,
+          licenseUrl: asset.license.url,
+          attribution: asset.license.attribution ?? ""
+        }
+      });
+
+      if (!response.ok) {
+        return errorToolResult(new Error(response.error ?? "Unity catalog import failed."));
+      }
+
+      const result = parseJsonObject(response.resultJson);
+      return jsonToolResult({
+        ...result,
+        catalogAsset: toPublicCatalogAsset(asset)
+      });
+    } catch (error) {
+      return errorToolResult(error);
+    }
+  }
 );
 
 const prefabEditSchema = z.object({
@@ -999,6 +1111,40 @@ async function bridgeTool(capability: string, input: unknown = {}) {
       }
     ]
   };
+}
+
+function jsonToolResult(value: unknown) {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify(value, null, 2)
+      }
+    ]
+  };
+}
+
+function errorToolResult(error: unknown) {
+  return {
+    isError: true,
+    content: [
+      {
+        type: "text" as const,
+        text: error instanceof Error ? error.message : String(error)
+      }
+    ]
+  };
+}
+
+function parseJsonObject(value: string | undefined): Record<string, unknown> {
+  if (!value) {
+    return {};
+  }
+
+  const parsed = JSON.parse(value) as unknown;
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown>
+    : { result: parsed };
 }
 
 function parseTimeout(value: string | undefined): number {

@@ -379,6 +379,8 @@ namespace UnityAI.ControlPlane.Editor
                 Capability("unity.console.plan_fix", "read"),
                 Capability("unity.console.apply_fix", "mutating_token_required"),
                 Capability("unity.assets.list", "read"),
+                Capability("unity.assets.catalog.search", "read"),
+                Capability("unity.assets.import_from_catalog", "mutating_token_required"),
                 Capability("unity.scenes.list", "read"),
                 Capability("unity.scene.inspect", "read"),
                 Capability("unity.scene.inspect_game_object", "read"),

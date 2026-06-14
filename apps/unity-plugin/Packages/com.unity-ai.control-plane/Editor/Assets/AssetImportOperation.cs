@@ -33,6 +33,7 @@ namespace UnityAI.ControlPlane.Editor
         public long maxBytes = 268435456;
         public int timeoutSeconds = 120;
         public bool allowInsecureLocalhost;
+        public AssetCatalogProvenanceInput catalogProvenance = new();
         public ModelImportSettingsInput model = new();
         public TextureImportSettingsInput texture = new();
         public AudioImportInput audio = new();
@@ -41,6 +42,20 @@ namespace UnityAI.ControlPlane.Editor
         public string parentPath;
         public ImportedAssetTransformInput transform = new();
         public string saveAsPrefabPath;
+    }
+
+    [Serializable]
+    public sealed class AssetCatalogProvenanceInput
+    {
+        public string catalogId;
+        public string catalogAssetId;
+        public string catalogName;
+        public string catalogHomepage;
+        public string sourceUrl;
+        public string licenseSpdxId;
+        public string licenseName;
+        public string licenseUrl;
+        public string attribution;
     }
 
     [Serializable]
@@ -102,6 +117,7 @@ namespace UnityAI.ControlPlane.Editor
         public string checkpointId;
         public string objectPath;
         public string prefabPath;
+        public AssetCatalogProvenanceInput catalogProvenance = new();
         public string message;
         public string verificationStatus;
         public string[] verificationSignals = Array.Empty<string>();
@@ -113,7 +129,8 @@ namespace UnityAI.ControlPlane.Editor
 
     public static class AssetImportOperation
     {
-        private const string Capability = "unity.assets.import";
+        private const string DefaultCapability = "unity.assets.import";
+        private const string CatalogCapability = "unity.assets.import_from_catalog";
         private const long MaximumBytes = 2L * 1024 * 1024 * 1024;
         private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -122,7 +139,7 @@ namespace UnityAI.ControlPlane.Editor
             ".wav", ".mp3", ".ogg", ".aif", ".aiff"
         };
 
-        public static AssetImportResult Execute(string requestBody)
+        public static AssetImportResult Execute(string requestBody, string capability = DefaultCapability)
         {
             var request = ParseRequest(requestBody);
             var input = request.input ?? new AssetImportInput();
@@ -131,7 +148,7 @@ namespace UnityAI.ControlPlane.Editor
             var destinationPath = NormalizeAssetPath(input.destinationPath);
             var prefabPath = NormalizeAssetPath(input.saveAsPrefabPath);
 
-            if (!Validate(input, sourceKind, destinationPath, prefabPath, out var validationError))
+            if (!Validate(input, sourceKind, destinationPath, prefabPath, capability, out var validationError))
             {
                 return Refused(request, sourceKind, destinationPath, validationError, timestamp);
             }
@@ -146,6 +163,7 @@ namespace UnityAI.ControlPlane.Editor
                     sourceKind = sourceKind,
                     destinationPath = destinationPath,
                     prefabPath = prefabPath,
+                    catalogProvenance = input.catalogProvenance ?? new AssetCatalogProvenanceInput(),
                     message = $"DRY RUN: would import {DescribeSource(input, sourceKind)} to '{destinationPath}'.",
                     verificationStatus = "passed",
                     verificationSignals = new[] { "structured_observation" },
@@ -162,6 +180,7 @@ namespace UnityAI.ControlPlane.Editor
                     sourceKind = sourceKind,
                     destinationPath = destinationPath,
                     prefabPath = prefabPath,
+                    catalogProvenance = input.catalogProvenance ?? new AssetCatalogProvenanceInput(),
                     requiresConfirmation = true,
                     message = "Asset import requires confirm=true.",
                     verificationStatus = "needs_confirmation",
@@ -269,10 +288,10 @@ namespace UnityAI.ControlPlane.Editor
                     var auditEvent = new UnityAiAuditEvent
                     {
                         timestamp = DateTime.UtcNow.ToString("O"),
-                        capability = Capability,
+                        capability = capability,
                         requestId = request.requestId,
                         correlationId = request.correlationId,
-                        message = $"Imported '{destinationPath}' from {sourceKind}; instantiated={instantiated}; prefabCreated={prefabCreated}.",
+                        message = BuildAuditMessage(input, destinationPath, sourceKind, instantiated, prefabCreated),
                         effects = BuildEffects(instantiated, prefabCreated, true)
                     };
                     var auditPersisted = PersistAudit(auditEvent);
@@ -295,6 +314,12 @@ namespace UnityAI.ControlPlane.Editor
                     if (auditPersisted)
                     {
                         signals.Add("operation_audited");
+                    }
+
+                    if (string.Equals(capability, CatalogCapability, StringComparison.Ordinal))
+                    {
+                        signals.Add("asset_license_verified");
+                        signals.Add("asset_hash_verified");
                     }
 
                     if (undoGroup >= 0)
@@ -321,6 +346,7 @@ namespace UnityAI.ControlPlane.Editor
                         checkpointId = checkpoint.checkpointId,
                         objectPath = objectPath,
                         prefabPath = prefabPath,
+                        catalogProvenance = input.catalogProvenance ?? new AssetCatalogProvenanceInput(),
                         message = verified ? $"Imported and verified '{destinationPath}'." : $"Imported '{destinationPath}', but verification failed.",
                         verificationStatus = verified ? "passed" : "failed",
                         verificationSignals = signals.ToArray(),
@@ -581,7 +607,13 @@ namespace UnityAI.ControlPlane.Editor
                 || (bytes.Length == 16 && (bytes[0] & 0xfe) == 0xfc);
         }
 
-        private static bool Validate(AssetImportInput input, string sourceKind, string destinationPath, string prefabPath, out string error)
+        private static bool Validate(
+            AssetImportInput input,
+            string sourceKind,
+            string destinationPath,
+            string prefabPath,
+            string capability,
+            out string error)
         {
             if (sourceKind != "local" && sourceKind != "url")
             {
@@ -615,6 +647,17 @@ namespace UnityAI.ControlPlane.Editor
                 return false;
             }
 
+            if (string.Equals(capability, CatalogCapability, StringComparison.Ordinal)
+                && (!ValidateCatalogProvenance(input.catalogProvenance, out error) || string.IsNullOrEmpty(expectedHash)))
+            {
+                if (string.IsNullOrEmpty(error))
+                {
+                    error = "Catalog imports require an expected SHA-256.";
+                }
+
+                return false;
+            }
+
             if (input.instantiate && !IsModelExtension(extension))
             {
                 error = "instantiate=true requires a supported 3D model destination extension.";
@@ -636,6 +679,32 @@ namespace UnityAI.ControlPlane.Editor
             if (!string.IsNullOrWhiteSpace(input.parentPath) && string.IsNullOrEmpty(NormalizeHierarchyPath(input.parentPath)))
             {
                 error = "parentPath is invalid.";
+                return false;
+            }
+
+            error = string.Empty;
+            return true;
+        }
+
+        private static bool ValidateCatalogProvenance(AssetCatalogProvenanceInput provenance, out string error)
+        {
+            if (provenance == null
+                || string.IsNullOrWhiteSpace(provenance.catalogId)
+                || string.IsNullOrWhiteSpace(provenance.catalogAssetId)
+                || string.IsNullOrWhiteSpace(provenance.sourceUrl)
+                || string.IsNullOrWhiteSpace(provenance.licenseSpdxId)
+                || string.IsNullOrWhiteSpace(provenance.licenseUrl))
+            {
+                error = "Catalog imports require catalog id, asset id, source URL, SPDX license, and license URL provenance.";
+                return false;
+            }
+
+            if (!Uri.TryCreate(provenance.sourceUrl, UriKind.Absolute, out var sourceUri)
+                || !Uri.TryCreate(provenance.licenseUrl, UriKind.Absolute, out var licenseUri)
+                || sourceUri.Scheme != Uri.UriSchemeHttps
+                || licenseUri.Scheme != Uri.UriSchemeHttps)
+            {
+                error = "Catalog source and license URLs must be absolute HTTPS URLs.";
                 return false;
             }
 
@@ -905,6 +974,20 @@ namespace UnityAI.ControlPlane.Editor
                 : $"local file '{Path.GetFileName(input.sourcePath)}'";
         }
 
+        private static string BuildAuditMessage(
+            AssetImportInput input,
+            string destinationPath,
+            string sourceKind,
+            bool instantiated,
+            bool prefabCreated)
+        {
+            var provenance = input.catalogProvenance;
+            var catalog = provenance != null && !string.IsNullOrWhiteSpace(provenance.catalogAssetId)
+                ? $"; catalog={provenance.catalogAssetId}; license={provenance.licenseSpdxId}"
+                : string.Empty;
+            return $"Imported '{destinationPath}' from {sourceKind}{catalog}; instantiated={instantiated}; prefabCreated={prefabCreated}.";
+        }
+
         private static AssetImportResult Refused(
             AssetImportRequest request,
             string sourceKind,
@@ -920,6 +1003,7 @@ namespace UnityAI.ControlPlane.Editor
                 correlationId = request.correlationId,
                 sourceKind = sourceKind,
                 destinationPath = destinationPath,
+                catalogProvenance = request.input?.catalogProvenance ?? new AssetCatalogProvenanceInput(),
                 message = message,
                 verificationStatus = "failed",
                 timestampUtc = timestamp
