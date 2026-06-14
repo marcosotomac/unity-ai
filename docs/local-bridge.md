@@ -52,10 +52,12 @@ The bridge handles:
 - `POST /capabilities/unity.scene.inspect_game_object`
 - `POST /capabilities/unity.scene.upsert_game_object`
 - `POST /capabilities/unity.scene.batch`
+- `POST /capabilities/unity.gameplay.compose`
 - `POST /capabilities/unity.prefabs.list`
 - `POST /capabilities/unity.prefab.inspect`
 - `POST /capabilities/unity.asset.dependencies`
 - `POST /capabilities/unity.scripts.list`
+- `POST /capabilities/unity.scripts.author`
 - `POST /capabilities/unity.assemblies.list`
 - `POST /capabilities/unity.packages.list`
 - `POST /capabilities/unity.project.settings.inspect`
@@ -92,10 +94,12 @@ The MCP server runs over stdio and exposes:
 - `unity.scene.inspect_game_object`
 - `unity.scene.upsert_game_object`
 - `unity.scene.batch`
+- `unity.gameplay.compose`
 - `unity.prefabs.list`
 - `unity.prefab.inspect`
 - `unity.asset.dependencies`
 - `unity.scripts.list`
+- `unity.scripts.author`
 - `unity.assemblies.list`
 - `unity.packages.list`
 - `unity.project.settings.inspect`

@@ -51,7 +51,7 @@ Verified tools:
 - [x] Propose a safe fix plan.
 - [x] Apply one controlled Editor-side change.
 - [x] Recompile and verify console state.
-- [ ] Produce an audit report with before/after evidence.
+- [x] Produce hashed JSON and Markdown audit reports with correlated events and before/after evidence.
 
 ## Milestone 3.5 — Real project observability
 
@@ -71,6 +71,21 @@ Verified tools:
 - [ ] Add prefab variant/override inspection.
 - [x] Add prefab asset authoring and override application/revert operations.
 - [x] Add material/shader/audio and animation mutation helpers.
+
+## Milestone 3.75 — Content creation and editing
+
+- [x] Import local 3D models, textures, and audio with bounded size and SHA-256 verification.
+- [x] Download remote assets over HTTPS with redirect and private-network protections.
+- [x] Configure model, texture, and audio import settings.
+- [x] Instantiate imported models and optionally save prefab assets.
+- [x] Create Animator Controllers from authored or imported clips.
+- [x] Add reusable runtime motion behaviours and compose them through scene batches.
+- [x] Generate hash-confirmed runtime MonoBehaviours with compilation verification, optional attachment, and automatic checkpoint rollback.
+- [x] Add atomic high-level templates for proximity doors, pickups, and multi-target activators.
+- [ ] Inspect and automatically wire imported materials and texture maps.
+- [ ] Add humanoid avatar configuration, animation retargeting, masks, and blend-tree authoring.
+- [ ] Add license-aware asset catalog adapters and provenance metadata.
+- [ ] Add higher-level UI, contextual audio, dialogue, quest, inventory, and XR interaction templates.
 
 ## Milestone 4 — Meta XR readiness
 

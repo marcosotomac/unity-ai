@@ -80,6 +80,8 @@ Verified tools:
 - `unity.prefab.inspect`
 - `unity.asset.dependencies`
 - `unity.scripts.list`
+- `unity.scripts.author` rejection, dry-run hashing, compile-failure rollback, attachment, and Play Mode execution
+- `unity.gameplay.compose` dry-run planning, checkpointed component wiring, and simultaneous door/pickup/activator Play Mode effects
 - `unity.assemblies.list`
 - `unity.packages.list`
 - `unity.project.settings.inspect`

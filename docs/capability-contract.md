@@ -52,13 +52,16 @@ verification:
 | Family | Purpose |
 |--------|---------|
 | `unity.project.*` | Inspect Unity project structure and settings. |
+| `unity.audit.*` | Correlate persisted events with hashed before/after evidence and produce reports. |
 | `unity.assets.*` | Inspect project assets and asset metadata. |
+| `unity.assets.import` | Copy/download external content, configure importers, instantiate models, and save prefabs. |
 | `unity.asset.*` | Inspect a specific asset, including dependencies. |
 | `unity.prefabs.*` | List prefab assets. |
 | `unity.prefab.*` | Inspect a specific prefab asset. |
 | `unity.scenes.*` | List Unity scenes. |
 | `unity.scene.*` | Inspect hierarchy/component state and apply controlled, atomic scene authoring batches. |
-| `unity.scripts.*` | Inspect C# scripts visible to Unity. |
+| `unity.gameplay.*` | Compose high-level doors, pickups, and activators from existing scene objects. |
+| `unity.scripts.*` | Inspect C# scripts or author gated runtime `MonoBehaviour` components with compile verification. |
 | `unity.assemblies.*` | Inspect Unity script assemblies. |
 | `unity.console.*` | Read, summarize, and verify logs. |
 | `unity.vision.*` | Capture ready screenshots, compare before/after artifacts, generate diffs, and detect visual regressions. |

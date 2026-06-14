@@ -21,8 +21,13 @@ The plugin starts with editor-only capabilities for:
 - compilation/import settling with console verification;
 - Android/Quest build validation and APK/AAB jobs;
 - shader, material, animation, WAV, and audio-import authoring;
+- local/HTTPS model, texture, and audio import with size/hash verification and importer configuration;
+- Animator Controller authoring plus reusable rotation, bobbing, and pulse runtime behaviours;
+- hash-confirmed runtime `MonoBehaviour` generation with blocked high-risk APIs, persistent compilation checks, optional attachment, and checkpoint rollback;
+- high-level proximity door, pickup, and multi-target activator composition with direct scene-reference wiring;
 - prefab assets, variants, edits, and override management;
 - Project Settings, Build Settings, package changes, and durable hashed checkpoints;
+- correlated JSON/Markdown audit reports with hashed before/after evidence;
 - controlled command routing for approved Editor operations.
 
-Broad authoring remains declarative: the plugin does not execute arbitrary generated C# or invoke arbitrary methods through reflection.
+Broad authoring remains declarative. Custom runtime components pass a conservative source policy and exact-hash confirmation before compilation; arbitrary Editor code and reflective method invocation are not exposed.

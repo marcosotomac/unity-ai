@@ -35,12 +35,15 @@ Exposes project-grade tools to AI agents while defining capability contracts and
 Initial tool families:
 
 - `unity.project.*` — inspect project structure, packages, settings, scenes, scripts, and assets.
+- `unity.audit.*` — generate hashed JSON/Markdown reports from persisted events and before/after evidence.
 - `unity.assets.*` — list project assets with GUIDs, paths, and main asset types.
+- `unity.assets.import` — copy or download FBX/OBJ/DAE/3DS/DXF and package-backed glTF models, textures, and audio; verify hashes; configure importers; instantiate models; and save prefabs.
 - `unity.asset.*` — inspect specific asset metadata and dependencies.
 - `unity.prefabs.*` / `unity.prefab.*` — list and inspect prefab assets.
 - `unity.scene.*` — inspect hierarchies and serialized component state, then create, duplicate, rename, reparent, delete, instantiate prefabs, add/remove components, and set serialized properties through atomic batches.
+- `unity.gameplay.*` — turn existing objects into checkpointed doors, pickups, and multi-target proximity activators through high-level templates.
 - `unity.scenes.*` — list scenes discovered in the project and Build Settings.
-- `unity.scripts.*` / `unity.assemblies.*` — inspect C# scripts and Unity script assemblies.
+- `unity.scripts.*` / `unity.assemblies.*` — inspect C# scripts and assemblies, or author hash-confirmed runtime `MonoBehaviour` components with compile verification and rollback.
 - `unity.packages.*` — list and change registry packages through reload-safe jobs.
 - `unity.jobs.*` — inspect and cancel persistent long-running operations.
 - `unity.playmode.*` / `unity.compilation.*` — control Play Mode and wait for compilation/import plus console verification.
@@ -50,7 +53,7 @@ Initial tool families:
 - `unity.meta_xr.*` — validate and configure Meta XR SDK, OpenXR, rigs, hands, passthrough, anchors, interactions, and Quest build requirements.
 - `unity.tests.*` — run Edit Mode/Play Mode tests and summarize failures.
 - `unity.build.*` — validate and execute builds, especially Android/Quest targets.
-- `unity.assets.author` — create or edit shaders, materials, animation clips, generated WAV audio, and audio import settings.
+- `unity.assets.author` — create or edit shaders, materials, animation clips, Animator Controllers, generated WAV audio, and audio import settings.
 - `unity.prefab.manage` — save prefab assets, create variants, edit prefab contents, and apply/revert overrides.
 
 ### Unity Editor plugin
