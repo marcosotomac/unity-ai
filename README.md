@@ -38,6 +38,7 @@ Initial tool families:
 - `unity.audit.*` — generate hashed JSON/Markdown reports from persisted events and before/after evidence.
 - `unity.assets.*` — list project assets with GUIDs, paths, and main asset types.
 - `unity.assets.import` — copy or download FBX/OBJ/DAE/3DS/DXF and package-backed glTF models, textures, and audio; verify hashes; configure importers; instantiate models; and save prefabs.
+- `unity.assets.catalog.search` / `unity.assets.import_from_catalog` — search CC0-by-default asset catalogs and import entries with enforced license, provenance, byte size, and SHA-256 metadata.
 - `unity.asset.*` — inspect specific asset metadata and dependencies.
 - `unity.prefabs.*` / `unity.prefab.*` — list and inspect prefab assets.
 - `unity.scene.*` — inspect hierarchies and serialized component state, then create, duplicate, rename, reparent, delete, instantiate prefabs, add/remove components, and set serialized properties through atomic batches.
@@ -188,7 +189,12 @@ Useful commands:
 npm ci
 npm run typecheck
 npm run build
+npm run schemas:check
+npm run verify:asset-catalog
+npm run verify:bridge-retry
 npm run verify:unity-package
 ```
 
 `npm run verify:unity-package` expects a local Unity installation. Set `UNITY_PATH` or pass the Unity executable path as the first argument if Unity is not discoverable in the default location.
+
+Run `npm run schemas:antigravity` after adding or changing MCP tools to refresh Antigravity's local `parameters` JSON instead of leaving stale `parameters: null` entries.

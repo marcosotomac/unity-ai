@@ -51,6 +51,8 @@ UnityAIArtifacts/Builds
 - `ModelImporter`, `TextureImporter`, and `AudioImporter` settings;
 - optional scene instantiation and prefab creation.
 
+`unity.assets.catalog.search` and `unity.assets.import_from_catalog` add a manifest-backed acquisition layer. Catalog entries are license-allowlisted, hash-bound, size-bound, and audited with their provenance; direct arbitrary URLs are not accepted by the catalog import tool.
+
 Imported objects can be composed through `unity.scene.batch` with built-in, project, or package components. The package includes `ContinuousRotation`, `BobbingMotion`, and `PulseScale` runtime behaviours.
 
 `unity.scripts.author` extends composition to custom runtime behaviours. It requires a validated dry-run SHA-256, creates a durable checkpoint, blocks high-risk API families and edit-time execution, waits across Unity domain reloads, verifies the compiled `MonoBehaviour`, optionally attaches it, and restores the checkpoint on failure.

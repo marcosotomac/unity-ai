@@ -55,6 +55,7 @@ verification:
 | `unity.audit.*` | Correlate persisted events with hashed before/after evidence and produce reports. |
 | `unity.assets.*` | Inspect project assets and asset metadata. |
 | `unity.assets.import` | Copy/download external content, configure importers, instantiate models, and save prefabs. |
+| `unity.assets.catalog.*` / `unity.assets.import_from_catalog` | Search and import license/hash/provenance-bound catalog content. |
 | `unity.asset.*` | Inspect a specific asset, including dependencies. |
 | `unity.prefabs.*` | List prefab assets. |
 | `unity.prefab.*` | Inspect a specific prefab asset. |

@@ -34,6 +34,58 @@ Remote production imports require HTTPS. Every transfer is bounded by `maxBytes`
 
 FBX, OBJ, DAE, 3DS, and DXF use Unity's built-in model importer. GLB/glTF paths are accepted when the project has a compatible glTF importer package installed.
 
+## Search and import a catalog asset
+
+`unity.assets.catalog.search` always includes the bundled starter catalog. Additional HTTPS/CDN manifests can be configured with the comma-separated `UNITY_AI_ASSET_CATALOG_URLS` environment variable. Only `CC0-1.0` entries are accepted by default; override the allowlist explicitly with `UNITY_AI_ASSET_CATALOG_ALLOWED_LICENSES`.
+
+Each remote manifest entry must include a direct supported file URL, source URL, SPDX license, byte size, and SHA-256. Import does not accept an arbitrary URL from the tool caller:
+
+```json
+{
+  "schemaVersion": 1,
+  "catalog": {
+    "id": "studio-assets",
+    "name": "Studio CC0 Assets",
+    "homepage": "https://assets.example.com"
+  },
+  "assets": [
+    {
+      "id": "sports-car",
+      "name": "Sports Car",
+      "description": "Game-ready vehicle model",
+      "kind": "model",
+      "format": "fbx",
+      "tags": ["vehicle", "car"],
+      "downloadUrl": "https://cdn.example.com/sports-car.fbx",
+      "sourceUrl": "https://assets.example.com/sports-car",
+      "sha256": "64-character-sha256",
+      "sizeBytes": 12345678,
+      "license": {
+        "spdxId": "CC0-1.0",
+        "name": "CC0 1.0 Universal",
+        "url": "https://creativecommons.org/publicdomain/zero/1.0/"
+      }
+    }
+  ]
+}
+```
+
+Search first, retain the returned hash, then confirm the import:
+
+```json
+{
+  "dryRun": false,
+  "confirm": true,
+  "catalogAssetId": "studio-assets:sports-car",
+  "expectedCatalogSha256": "hash-returned-by-search",
+  "destinationPath": "Assets/Imported/Vehicles/SportsCar.fbx",
+  "instantiate": true,
+  "saveAsPrefabPath": "Assets/Imported/Vehicles/SportsCar.prefab"
+}
+```
+
+The Unity audit result retains catalog ID, asset ID, source, SPDX license, and license URL. Downloads still use the bridge's HTTPS, redirect, private-network, timeout, byte-limit, checkpoint, and hash checks.
+
 ## Create animation logic
 
 Use `unity.assets.author` with `kind: "animation_clip"` to write curves and `kind: "animator_controller"` to assemble states, parameters, transitions, and conditions.

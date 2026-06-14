@@ -84,7 +84,7 @@ Verified tools:
 - [x] Add atomic high-level templates for proximity doors, pickups, and multi-target activators.
 - [ ] Inspect and automatically wire imported materials and texture maps.
 - [ ] Add humanoid avatar configuration, animation retargeting, masks, and blend-tree authoring.
-- [ ] Add license-aware asset catalog adapters and provenance metadata.
+- [x] Add license-aware asset catalog manifests, CDN adapters, and provenance metadata.
 - [ ] Add higher-level UI, contextual audio, dialogue, quest, inventory, and XR interaction templates.
 
 ## Milestone 4 — Meta XR readiness
