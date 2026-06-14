@@ -81,7 +81,8 @@ writeFileSync(
     {
       dependencies: {
         "com.unity-ai.control-plane": "file:com.unity-ai.control-plane",
-        "com.unity.test-framework": "1.6.0"
+        "com.unity.test-framework": "1.6.0",
+        "com.unity.modules.physics": "1.0.0"
       }
     },
     null,
@@ -135,6 +136,17 @@ public sealed class UnityAiPlayModeTests
         yield return null;
         Assert.Pass();
     }
+}
+`
+);
+writeFileSync(
+  join(assetsDir, "UnityAiReferenceFixture.cs"),
+  `using UnityEngine;
+
+public sealed class UnityAiReferenceFixture : MonoBehaviour
+{
+    public GameObject targetObject;
+    public Rigidbody targetBody;
 }
 `
 );
@@ -488,6 +500,11 @@ function assertCapabilities(capabilities) {
   const gameObjectInspectCapability = capabilities.find((capability) => capability.name === "unity.scene.inspect_game_object");
   if (!gameObjectInspectCapability || !gameObjectInspectCapability.permissions.includes("read_scenes") || !gameObjectInspectCapability.effects.includes("report_only")) {
     fail("unity.scene.inspect_game_object must be a read-only scene inspection capability.");
+  }
+
+  const physicsInspectCapability = capabilities.find((capability) => capability.name === "unity.physics.inspect");
+  if (!physicsInspectCapability || !physicsInspectCapability.permissions.includes("read_scenes") || !physicsInspectCapability.effects.includes("report_only")) {
+    fail("unity.physics.inspect must be a read-only scene inspection capability.");
   }
 
   const sceneBatchCapability = capabilities.find((capability) => capability.name === "unity.scene.batch");
@@ -1209,9 +1226,31 @@ async function assertSceneBatchFlow(client) {
         name: "UnityAiBatchRenamed"
       },
       {
-        kind: "set_active",
-        targetPath: "UnityAiBatchRoot/UnityAiBatchRenamed",
-        active: false
+        kind: "add_component",
+        targetPath: "UnityAiBatchRoot/UnityAiE2ECube",
+        componentType: "UnityAiReferenceFixture"
+      },
+      {
+        kind: "set_property",
+        targetPath: "UnityAiBatchRoot/UnityAiE2ECube",
+        componentType: "UnityAiReferenceFixture",
+        propertyPath: "targetObject",
+        value: {
+          kind: "game_object_reference",
+          path: "UnityAiBatchRoot/UnityAiBatchRenamed"
+        }
+      },
+      {
+        kind: "set_property",
+        targetPath: "UnityAiBatchRoot/UnityAiE2ECube",
+        componentType: "UnityAiReferenceFixture",
+        propertyPath: "targetBody",
+        value: {
+          kind: "component_reference",
+          path: "UnityAiBatchRoot/UnityAiBatchRenamed",
+          componentType: "UnityEngine.Rigidbody",
+          componentIndex: 0
+        }
       },
       {
         kind: "instantiate_prefab",
@@ -1232,7 +1271,7 @@ async function assertSceneBatchFlow(client) {
     forbiddenSignals: []
   });
 
-  if (applied.appliedOperationCount !== 9 || !Array.isArray(applied.operations) || applied.operations.some((operation) => operation.applied !== true || operation.verified !== true)) {
+  if (applied.appliedOperationCount !== 11 || !Array.isArray(applied.operations) || applied.operations.some((operation) => operation.applied !== true || operation.verified !== true)) {
     fail(`real scene batch did not verify all operations: ${JSON.stringify(applied.operations)}.`);
   }
 
@@ -1243,6 +1282,66 @@ async function assertSceneBatchFlow(client) {
     maxPropertyDepth: 8
   });
   assertGameObjectInspection(inspected);
+  assertReferenceBinding(inspected);
+
+  const filtered = await callJsonTool(client, "unity.scene.inspect", {
+    includeComponents: true,
+    maxDepth: 10,
+    maxGameObjects: 10,
+    filter: {
+      pathPrefix: "UnityAiBatchRoot",
+      componentType: "UnityEngine.Rigidbody",
+      withinRadius: {
+        centerPath: "UnityAiBatchRoot/UnityAiE2ECube",
+        radius: 0.1
+      }
+    }
+  });
+  if (filtered.filtered !== true
+      || filtered.returnedGameObjectCount !== 2
+      || filtered.matchedGameObjectCount !== 2
+      || filtered.gameObjects.some((item) => !item.components.includes("Rigidbody") || item.distanceFromFilterCenter > 0.1)) {
+    fail(`filtered scene inspection did not return the two colocated rigidbodies: ${JSON.stringify(filtered)}.`);
+  }
+
+  const physics = await callJsonTool(client, "unity.physics.inspect", {
+    pathPrefix: "UnityAiBatchRoot",
+    includeInactive: true,
+    dimension: "3d",
+    includeOverlapDiagnostics: true,
+    maxObjects: 20,
+    maxOverlaps: 20
+  });
+  if (physics.returnedPhysicsObjectCount < 2
+      || !Array.isArray(physics.objects)
+      || physics.objects.filter((item) => item.hasBody3D === true && item.body3D?.dimension === "3d").length < 2
+      || physics.detectedOverlapCount < 1
+      || !Array.isArray(physics.overlaps)
+      || !physics.overlaps.some((overlap) => overlap.dimension === "3d" && overlap.relativeNormalSpeed >= 0)) {
+    fail(`physics inspection did not expose bodies and overlap diagnostics: ${JSON.stringify(physics)}.`);
+  }
+
+  const deactivated = await callJsonTool(client, "unity.scene.batch", {
+    dryRun: false,
+    confirm: true,
+    operations: [
+      {
+        kind: "set_active",
+        targetPath: "UnityAiBatchRoot/UnityAiBatchRenamed",
+        active: false
+      }
+    ]
+  });
+  assertSceneBatchResult("scene batch deactivation", deactivated, {
+    dryRun: false,
+    applied: true,
+    rolledBack: false,
+    verificationStatus: "passed",
+    requiresConfirmation: false,
+    effects: ["scene_change", "write_audit_log"],
+    requiredSignals: ["batch_applied", "scene_mutation_verified"],
+    forbiddenSignals: []
+  });
 
   scene = await callJsonTool(client, "unity.scene.inspect", { includeComponents: true, maxDepth: 6, maxGameObjects: 200 });
   const renamedCopy = findSceneObject(scene, "UnityAiBatchRoot/UnityAiBatchRenamed");
@@ -1297,6 +1396,11 @@ async function assertSceneBatchFlow(client) {
         kind: "remove_component",
         targetPath: "UnityAiBatchRoot/UnityAiE2ECube",
         componentType: "UnityEngine.Rigidbody"
+      },
+      {
+        kind: "remove_component",
+        targetPath: "UnityAiBatchRoot/UnityAiE2ECube",
+        componentType: "UnityAiReferenceFixture"
       },
       { kind: "delete", targetPath: "UnityAiBatchRoot/UnityAiBatchRenamed" },
       { kind: "delete", targetPath: "UnityAiBatchRoot/UnityAiBatchPrefab" }
@@ -1382,6 +1486,24 @@ function assertGameObjectInspection(report) {
   }
 
   assertNoAbsolutePathLeakInValue("game object inspection", report);
+}
+
+function assertReferenceBinding(report) {
+  const fixture = report.components.find((component) => component.fullTypeName === "UnityAiReferenceFixture");
+  if (!fixture || !Array.isArray(fixture.properties)) {
+    fail("scene reference fixture component was not inspectable.");
+  }
+
+  const targetObject = fixture.properties.find((property) => property.path === "targetObject");
+  const targetBody = fixture.properties.find((property) => property.path === "targetBody");
+  if (targetObject?.objectReferenceKind !== "game_object"
+      || targetObject.objectReferencePath !== "UnityAiBatchRoot/UnityAiBatchRenamed"
+      || targetBody?.objectReferenceKind !== "component"
+      || targetBody.objectReferencePath !== "UnityAiBatchRoot/UnityAiBatchRenamed"
+      || targetBody.objectReferenceComponentType !== "UnityEngine.Rigidbody"
+      || targetBody.objectReferenceComponentIndex !== 0) {
+    fail(`serialized scene references were not bound or reported correctly: ${JSON.stringify(fixture.properties)}.`);
+  }
 }
 
 async function assertVisualVerificationFlow(client) {
@@ -2906,6 +3028,15 @@ function assertConsoleDiagnostics(report) {
     fail(`unity.console.diagnose diagnosticCount ${report.diagnosticCount} did not match diagnostics length ${report.diagnostics.length}.`);
   }
 
+  if (typeof report.blockingErrorCount !== "number"
+      || typeof report.nonBlockingIssueCount !== "number"
+      || typeof report.hasBlockingErrors !== "boolean"
+      || report.compilationErrorCount < 1
+      || report.runtimeErrorCount < 1
+      || report.hasBlockingErrors !== true) {
+    fail(`unity.console.diagnose did not expose strict blocking classifications: ${JSON.stringify(report)}.`);
+  }
+
   if (!findDiagnostic(report, diagnosticWarningMarker, "warning", "warning")) {
     fail("unity.console.diagnose did not map the deterministic warning fixture to severity=warning category=warning.");
   }
@@ -2918,12 +3049,21 @@ function assertConsoleDiagnostics(report) {
     fail("unity.console.diagnose did not map the deterministic exception fixture to severity=error category=runtime_exception.");
   }
 
+  const compilerDiagnostic = findDiagnostic(report, diagnosticErrorMarker, "error", "compiler_error");
+  const runtimeDiagnostic = findDiagnostic(report, diagnosticExceptionMarker, "error", "runtime_exception");
+  if (compilerDiagnostic.classification !== "CompilationError"
+      || compilerDiagnostic.blocking !== true
+      || runtimeDiagnostic.classification !== "RuntimeError"
+      || runtimeDiagnostic.blocking !== false) {
+    fail("unity.console.diagnose did not distinguish blocking compiler errors from non-blocking runtime errors.");
+  }
+
   for (const diagnostic of report.diagnostics) {
-    if (typeof diagnostic.category !== "string" || typeof diagnostic.severity !== "string" || typeof diagnostic.message !== "string" || typeof diagnostic.stackHint !== "string" || typeof diagnostic.functionHint !== "string" || typeof diagnostic.likelyRootCause !== "string" || typeof diagnostic.suggestedNextSafeAction !== "string") {
+    if (typeof diagnostic.category !== "string" || typeof diagnostic.classification !== "string" || typeof diagnostic.blocking !== "boolean" || typeof diagnostic.severity !== "string" || typeof diagnostic.message !== "string" || typeof diagnostic.stackHint !== "string" || typeof diagnostic.functionHint !== "string" || typeof diagnostic.likelyRootCause !== "string" || typeof diagnostic.suggestedNextSafeAction !== "string") {
       fail("unity.console.diagnose returned a diagnostic with missing string fields.");
     }
 
-    const diagnosticStringFields = ["category", "severity", "message", "file", "stackHint", "functionHint", "likelyRootCause", "suggestedNextSafeAction"];
+    const diagnosticStringFields = ["category", "classification", "severity", "message", "file", "stackHint", "functionHint", "likelyRootCause", "suggestedNextSafeAction"];
     for (const field of diagnosticStringFields) {
       assertNoAbsolutePathLeak(`diagnostic.${field}`, diagnostic[field]);
     }
