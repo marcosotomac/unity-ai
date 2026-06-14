@@ -1,7 +1,9 @@
 {
   "name": "Unity.AI.ControlPlane.Editor",
   "rootNamespace": "UnityAI.ControlPlane.Editor",
-  "references": [],
+  "references": [
+    "Unity.AI.ControlPlane.Runtime"
+  ],
   "includePlatforms": [
     "Editor"
   ],
