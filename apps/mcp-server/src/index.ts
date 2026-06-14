@@ -50,6 +50,42 @@ server.registerTool(
   async () => bridgeTool("unity.project.snapshot")
 );
 
+const auditEvidenceSchema = z.object({
+  phase: z.enum(["before", "after", "supporting"]).default("supporting"),
+  kind: z.string().min(1).max(64).default("artifact"),
+  path: z.string().min(1).max(512),
+  description: z.string().max(1000).optional()
+}).strict();
+
+const auditVerificationSchema = z.object({
+  signal: z.string().min(1).max(128),
+  status: z.enum(["passed", "failed", "inconclusive"]),
+  summary: z.string().max(2000).optional(),
+  evidencePaths: z.array(z.string().min(1).max(512)).max(100).default([])
+}).strict();
+
+server.registerTool(
+  "unity.audit.report",
+  {
+    description: "Generate hashed JSON and Markdown audit reports from persisted events and project-relative before/after evidence.",
+    inputSchema: z.object({
+      title: z.string().min(1).max(160).default("Unity AI verification report"),
+      summary: z.string().max(4000).optional(),
+      requestIds: z.array(z.string().min(1).max(256)).max(200).default([]),
+      correlationIds: z.array(z.string().min(1).max(256)).max(200).default([]),
+      capabilities: z.array(z.string().min(1).max(256)).max(200).default([]),
+      sinceUtc: z.string().datetime({ offset: true }).optional(),
+      untilUtc: z.string().datetime({ offset: true }).optional(),
+      maxEvents: z.number().int().min(1).max(5000).default(200),
+      maxEvidenceBytes: z.number().int().min(1).max(10_737_418_240).default(2_147_483_648),
+      requireBeforeAfter: z.boolean().default(false),
+      evidence: z.array(auditEvidenceSchema).max(100).default([]),
+      verifications: z.array(auditVerificationSchema).max(200).default([])
+    }).strict()
+  },
+  async (input) => bridgeTool("unity.audit.report", input)
+);
+
 server.registerTool(
   "unity.console.read",
   {
@@ -285,6 +321,59 @@ server.registerTool(
   async (input) => bridgeTool("unity.scene.batch", input)
 );
 
+const gameplayInteractorSchema = {
+  interactorPath: z.string().min(1).max(512).optional(),
+  interactorTag: z.string().min(1).max(80).default("Player"),
+  activationDistance: z.number().finite().min(0.01).max(1000).default(2)
+};
+
+const gameplayTemplateSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("door"),
+    targetPath: z.string().min(1).max(512),
+    ...gameplayInteractorSchema,
+    deactivationDistance: z.number().finite().min(0.01).max(1000).default(2.5),
+    openOffset: sceneVectorSchema.default({ x: 0, y: 2.5, z: 0 }),
+    speed: z.number().finite().min(0.01).max(1000).default(3),
+    startsOpen: z.boolean().default(false),
+    closeWhenOutOfRange: z.boolean().default(true)
+  }).strict(),
+  z.object({
+    kind: z.literal("pickup"),
+    targetPath: z.string().min(1).max(512),
+    ...gameplayInteractorSchema,
+    pickupId: z.string().min(1).max(128).default("pickup"),
+    value: z.number().int().min(0).max(1_000_000).default(1),
+    collectAction: z.enum(["deactivate", "destroy"]).default("deactivate"),
+    spinAxis: sceneVectorSchema.default({ x: 0, y: 1, z: 0 }),
+    spinDegreesPerSecond: z.number().finite().min(-10_000).max(10_000).default(90),
+    bobAmplitude: z.number().finite().min(0).max(1000).default(0.15),
+    bobFrequency: z.number().finite().min(0).max(1000).default(1)
+  }).strict(),
+  z.object({
+    kind: z.literal("activator"),
+    targetPath: z.string().min(1).max(512),
+    ...gameplayInteractorSchema,
+    affectedPaths: z.array(z.string().min(1).max(512)).min(1).max(32),
+    action: z.enum(["activate", "deactivate", "toggle"]).default("activate"),
+    oneShot: z.boolean().default(true),
+    revertOnExit: z.boolean().default(false)
+  }).strict()
+]);
+
+server.registerTool(
+  "unity.gameplay.compose",
+  {
+    description: "Turn existing scene objects into checkpointed proximity doors, pickups, and multi-target activators.",
+    inputSchema: z.object({
+      dryRun: z.boolean().default(true),
+      confirm: z.boolean().default(false),
+      templates: z.array(gameplayTemplateSchema).min(1).max(20)
+    }).strict()
+  },
+  async (input) => bridgeTool("unity.gameplay.compose", input)
+);
+
 server.registerTool(
   "unity.prefabs.list",
   {
@@ -334,6 +423,27 @@ server.registerTool(
     })
   },
   async ({ includePackages, maxResults }) => bridgeTool("unity.scripts.list", { includePackages, maxResults })
+);
+
+server.registerTool(
+  "unity.scripts.author",
+  {
+    description: "Validate and hash-confirm a runtime MonoBehaviour, then write, compile, optionally attach, verify, and roll back on failure.",
+    inputSchema: z.object({
+      dryRun: z.boolean().default(true),
+      confirm: z.boolean().default(false),
+      path: z.string().min(1).max(512),
+      source: z.string().min(1).max(262144),
+      expectedSourceSha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
+      expectedClassName: z.string().regex(/^[_\p{L}][_\p{L}\p{N}]*$/u).max(128),
+      expectedNamespace: z.string().regex(/^[_\p{L}][_\p{L}\p{N}]*(?:\.[_\p{L}][_\p{L}\p{N}]*)*$/u).max(256).optional(),
+      overwrite: z.boolean().default(false),
+      attachToObjectPath: z.string().min(1).max(512).optional(),
+      autoRollbackOnCompileError: z.boolean().default(true),
+      timeoutSeconds: z.number().int().min(10).max(1800).default(300)
+    }).strict()
+  },
+  async (input) => bridgeTool("unity.scripts.author", input)
 );
 
 server.registerTool(
@@ -566,14 +676,50 @@ const audioImportSchema = z.object({
   sampleRateOverride: z.number().int().min(0).max(192000).default(0)
 }).strict();
 
+const animatorParameterSchema = z.object({
+  name: z.string().min(1).max(128),
+  type: z.enum(["float", "int", "bool", "trigger"]).default("float"),
+  defaultFloat: z.number().finite().default(0),
+  defaultInt: z.number().int().default(0),
+  defaultBool: z.boolean().default(false)
+}).strict();
+
+const animatorStateSchema = z.object({
+  name: z.string().min(1).max(128),
+  clipPath: z.string().min(1).max(512),
+  clipName: z.string().min(1).max(128).optional(),
+  speed: z.number().finite().min(-100).max(100).default(1),
+  writeDefaultValues: z.boolean().default(true),
+  positionX: z.number().finite().default(0),
+  positionY: z.number().finite().default(0)
+}).strict();
+
+const animatorTransitionConditionSchema = z.object({
+  mode: z.enum(["if", "if_not", "greater", "less", "equals", "not_equal"]).default("if"),
+  threshold: z.number().finite().default(0),
+  parameter: z.string().min(1).max(128)
+}).strict();
+
+const animatorTransitionSchema = z.object({
+  fromState: z.string().min(1).max(128),
+  toState: z.string().min(1).max(128),
+  hasExitTime: z.boolean().default(true),
+  exitTime: z.number().finite().min(0).max(1000).default(1),
+  duration: z.number().finite().min(0).max(1000).default(0.1),
+  hasFixedDuration: z.boolean().default(true),
+  offset: z.number().finite().min(0).max(1).default(0),
+  canTransitionToSelf: z.boolean().default(false),
+  conditions: z.array(animatorTransitionConditionSchema).max(20).default([])
+}).strict();
+
 server.registerTool(
   "unity.assets.author",
   {
-    description: "Create or edit shaders, materials, animation clips, generated WAV audio, and audio import settings with checkpoints.",
+    description: "Create or edit shaders, materials, animation clips, Animator Controllers, generated WAV audio, and audio import settings with checkpoints.",
     inputSchema: z.object({
       dryRun: z.boolean().default(true),
       confirm: z.boolean().default(false),
-      kind: z.enum(["shader", "material", "animation_clip", "audio_tone", "audio_import"]),
+      kind: z.enum(["shader", "material", "animation_clip", "animator_controller", "audio_tone", "audio_import"]),
       path: z.string().min(1).max(512),
       shaderSource: z.string().max(1_048_576).optional(),
       shaderName: z.string().min(1).max(256).optional(),
@@ -584,6 +730,11 @@ server.registerTool(
       clearExistingCurves: z.boolean().default(false),
       frameRate: z.number().min(1).max(240).default(60),
       animationCurves: z.array(animationCurveSchema).max(500).default([]),
+      clearExistingStates: z.boolean().default(true),
+      defaultState: z.string().min(1).max(128).optional(),
+      animatorParameters: z.array(animatorParameterSchema).max(100).default([]),
+      animatorStates: z.array(animatorStateSchema).max(200).default([]),
+      animatorTransitions: z.array(animatorTransitionSchema).max(500).default([]),
       audioTone: z.object({
         frequencyHz: z.number().min(1).max(86000).default(440),
         durationSeconds: z.number().min(0.01).max(300).default(1),
@@ -595,6 +746,63 @@ server.registerTool(
     }).strict()
   },
   async (input) => bridgeTool("unity.assets.author", input)
+);
+
+const modelImportSettingsSchema = z.object({
+  globalScale: z.number().finite().min(0.0001).max(10000).default(1),
+  useFileScale: z.boolean().default(true),
+  importBlendShapes: z.boolean().default(true),
+  importVisibility: z.boolean().default(true),
+  importCameras: z.boolean().default(false),
+  importLights: z.boolean().default(false),
+  addCollider: z.boolean().default(false),
+  importAnimation: z.boolean().default(true),
+  animationType: z.enum(["none", "legacy", "generic", "human"]).default("generic"),
+  isReadable: z.boolean().default(false),
+  meshCompression: z.enum(["off", "low", "medium", "high"]).default("off")
+}).strict();
+
+const textureImportSettingsSchema = z.object({
+  textureType: z.enum(["default", "normal_map", "sprite", "cursor", "cookie", "lightmap", "single_channel"]).default("default"),
+  sRgb: z.boolean().default(true),
+  alphaIsTransparency: z.boolean().default(false),
+  mipmapEnabled: z.boolean().default(true),
+  isReadable: z.boolean().default(false),
+  maxTextureSize: z.number().int().min(32).max(16384).default(2048),
+  compression: z.enum(["uncompressed", "compressed", "compressed_hq", "compressed_lq"]).default("compressed")
+}).strict();
+
+server.registerTool(
+  "unity.assets.import",
+  {
+    description: "Copy or download a model, texture, or audio file, apply importer settings, and optionally instantiate it or save a prefab.",
+    inputSchema: z.object({
+      dryRun: z.boolean().default(true),
+      confirm: z.boolean().default(false),
+      sourceKind: z.enum(["local", "url"]).default("local"),
+      sourcePath: z.string().min(1).max(4096).optional(),
+      url: z.string().url().max(4096).optional(),
+      destinationPath: z.string().min(1).max(512),
+      overwrite: z.boolean().default(false),
+      expectedSha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
+      maxBytes: z.number().int().min(1).max(2_147_483_648).default(268_435_456),
+      timeoutSeconds: z.number().int().min(5).max(1800).default(120),
+      allowInsecureLocalhost: z.boolean().default(false),
+      model: modelImportSettingsSchema.optional(),
+      texture: textureImportSettingsSchema.optional(),
+      audio: audioImportSchema.optional(),
+      instantiate: z.boolean().default(false),
+      objectName: z.string().min(1).max(80).optional(),
+      parentPath: z.string().min(1).max(512).optional(),
+      transform: z.object({
+        position: sceneVectorSchema.optional(),
+        rotationEuler: sceneVectorSchema.optional(),
+        scale: sceneVectorSchema.optional()
+      }).strict().optional(),
+      saveAsPrefabPath: z.string().min(1).max(512).optional()
+    }).strict()
+  },
+  async (input) => bridgeTool("unity.assets.import", input)
 );
 
 const prefabEditSchema = z.object({

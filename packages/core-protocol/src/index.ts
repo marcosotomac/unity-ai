@@ -8,6 +8,8 @@ export type CapabilityPermission =
   | "read_assets"
   | "read_console"
   | "read_artifacts"
+  | "read_external_files"
+  | "network_access"
   | "capture_screenshots"
   | "write_artifacts"
   | "modify_scenes"
@@ -65,7 +67,13 @@ export type VerificationSignal =
   | "packages_resolved"
   | "asset_mutation_verified"
   | "prefab_mutation_verified"
-  | "meta_xr_configured";
+  | "meta_xr_configured"
+  | "audit_report_generated"
+  | "evidence_hash_verified"
+  | "asset_import_verified"
+  | "script_source_validated"
+  | "script_compilation_verified"
+  | "gameplay_template_applied";
 
 export interface CapabilityManifest {
   readonly name: CapabilityName;

@@ -16,6 +16,13 @@ export const initialCapabilities: CapabilityManifest[] = [
     verification: ["structured_observation", "console_snapshot", "console_diagnostics"]
   },
   {
+    name: "unity.audit.report",
+    description: "Generate hashed JSON and Markdown reports from persisted audit events and before/after evidence artifacts.",
+    permissions: ["read_artifacts", "write_artifacts"],
+    effects: ["report_only", "write_artifacts", "write_audit_log"],
+    verification: ["structured_observation", "operation_audited", "audit_report_generated", "evidence_hash_verified"]
+  },
+  {
     name: "unity.console.read",
     description: "Read Unity Console messages and summarize errors, warnings, and logs.",
     permissions: ["read_console"],
@@ -86,6 +93,13 @@ export const initialCapabilities: CapabilityManifest[] = [
     verification: ["operation_audited", "structured_observation", "scene_mutation_verified", "batch_applied", "component_state_verified"]
   },
   {
+    name: "unity.gameplay.compose",
+    description: "Configure reusable door, pickup, and multi-target activator gameplay templates on existing scene objects.",
+    permissions: ["read_scenes", "modify_scenes"],
+    effects: ["report_only", "write_checkpoint", "write_audit_log", "scene_change"],
+    verification: ["operation_audited", "structured_observation", "checkpoint_created", "gameplay_template_applied", "component_state_verified", "scene_mutation_verified", "rollback_verified"]
+  },
+  {
     name: "unity.prefabs.list",
     description: "List prefabs in the Unity project with paths, GUIDs, and root component summaries.",
     permissions: ["read_project", "read_assets"],
@@ -112,6 +126,13 @@ export const initialCapabilities: CapabilityManifest[] = [
     permissions: ["read_project", "read_assets"],
     effects: ["report_only"],
     verification: ["structured_observation"]
+  },
+  {
+    name: "unity.scripts.author",
+    description: "Validate, hash-confirm, write, compile, and optionally attach a checkpointed runtime MonoBehaviour with automatic rollback.",
+    permissions: ["read_project", "read_console", "modify_assets", "modify_scenes", "execute_editor_script"],
+    effects: ["write_checkpoint", "write_audit_log", "asset_change", "code_change", "scene_change"],
+    verification: ["script_source_validated", "checkpoint_created", "operation_audited", "compilation_completed", "console_snapshot", "script_compilation_verified", "component_state_verified", "scene_mutation_verified", "checkpoint_restored"]
   },
   {
     name: "unity.assemblies.list",
@@ -220,10 +241,17 @@ export const initialCapabilities: CapabilityManifest[] = [
   },
   {
     name: "unity.assets.author",
-    description: "Create or edit shaders, materials, animation clips, WAV audio, and audio import settings.",
+    description: "Create or edit shaders, materials, animation clips, Animator Controllers, WAV audio, and audio import settings.",
     permissions: ["read_assets", "modify_assets", "write_artifacts"],
     effects: ["write_checkpoint", "asset_change"],
     verification: ["checkpoint_created", "asset_mutation_verified"]
+  },
+  {
+    name: "unity.assets.import",
+    description: "Copy or download models, textures, and audio into Assets, configure Unity importers, and optionally instantiate or save a prefab.",
+    permissions: ["read_external_files", "network_access", "read_assets", "modify_assets", "modify_scenes", "write_artifacts"],
+    effects: ["write_checkpoint", "write_audit_log", "asset_change", "scene_change"],
+    verification: ["checkpoint_created", "operation_audited", "asset_import_verified", "scene_mutation_verified", "prefab_mutation_verified"]
   },
   {
     name: "unity.prefab.manage",

@@ -275,6 +275,8 @@ namespace UnityAI.ControlPlane.Editor
                     return JsonResult(capability, envelope, ProjectInspector.InspectActiveProject());
                 case "unity.project.snapshot":
                     return JsonResult(capability, envelope, ProjectSnapshotObserver.Capture());
+                case "unity.audit.report":
+                    return JsonResult(capability, envelope, AuditReportGenerator.Generate(requestBody));
                 case "unity.console.read":
                     return JsonResult(capability, envelope, ConsoleLogBridge.GetSummary());
                 case "unity.console.diagnose":
@@ -295,6 +297,8 @@ namespace UnityAI.ControlPlane.Editor
                     return JsonResult(capability, envelope, SceneUpsertGameObjectOperation.Execute(requestBody));
                 case "unity.scene.batch":
                     return JsonResult(capability, envelope, SceneBatchOperation.Execute(requestBody));
+                case "unity.gameplay.compose":
+                    return JsonResult(capability, envelope, GameplayComposeOperation.Execute(requestBody));
                 case "unity.prefabs.list":
                     return JsonResult(capability, envelope, PrefabObserver.ListPrefabs(requestBody));
                 case "unity.prefab.inspect":
@@ -303,6 +307,8 @@ namespace UnityAI.ControlPlane.Editor
                     return JsonResult(capability, envelope, AssetDependencyObserver.InspectDependencies(requestBody));
                 case "unity.scripts.list":
                     return JsonResult(capability, envelope, ScriptAndAssemblyObserver.ListScripts(requestBody));
+                case "unity.scripts.author":
+                    return JsonResult(capability, envelope, ScriptAuthoringOperation.Start(requestBody));
                 case "unity.assemblies.list":
                     return JsonResult(capability, envelope, ScriptAndAssemblyObserver.ListAssemblies(requestBody));
                 case "unity.packages.list":
@@ -335,6 +341,8 @@ namespace UnityAI.ControlPlane.Editor
                     return JsonResult(capability, envelope, BuildOperations.StartAndroidBuild(requestBody));
                 case "unity.assets.author":
                     return JsonResult(capability, envelope, AssetAuthoringOperation.Execute(requestBody));
+                case "unity.assets.import":
+                    return JsonResult(capability, envelope, AssetImportOperation.Execute(requestBody));
                 case "unity.prefab.manage":
                     return JsonResult(capability, envelope, PrefabAssetOperation.Execute(requestBody));
                 case "unity.checkpoints.create":
@@ -415,6 +423,7 @@ namespace UnityAI.ControlPlane.Editor
                 case "unity.console.apply_fix":
                 case "unity.scene.upsert_game_object":
                 case "unity.scene.batch":
+                case "unity.gameplay.compose":
                 case "unity.project.settings.update":
                 case "unity.packages.change":
                 case "unity.jobs.cancel":
@@ -423,6 +432,8 @@ namespace UnityAI.ControlPlane.Editor
                 case "unity.compilation.wait":
                 case "unity.build.android":
                 case "unity.assets.author":
+                case "unity.assets.import":
+                case "unity.scripts.author":
                 case "unity.prefab.manage":
                 case "unity.checkpoints.create":
                 case "unity.checkpoints.restore":
