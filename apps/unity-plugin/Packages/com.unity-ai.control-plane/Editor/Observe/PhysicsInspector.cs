@@ -295,7 +295,7 @@ namespace UnityAI.ControlPlane.Editor
                 return null;
             }
 
-            var velocity = body.velocity;
+            var velocity = body.linearVelocity;
             var estimate = SampleForce(BodySamples3D, body.GetInstanceID(), velocity, body.mass, !body.isKinematic);
             return new PhysicsBodyInfo
             {
@@ -326,7 +326,7 @@ namespace UnityAI.ControlPlane.Editor
                 return null;
             }
 
-            var velocity = new Vector3(body.velocity.x, body.velocity.y, 0f);
+            var velocity = new Vector3(body.linearVelocity.x, body.linearVelocity.y, 0f);
             var estimate = SampleForce(BodySamples2D, body.GetInstanceID(), velocity, body.mass, body.bodyType == RigidbodyType2D.Dynamic);
             return new PhysicsBodyInfo
             {
@@ -677,12 +677,12 @@ namespace UnityAI.ControlPlane.Editor
 
         private static Vector3 GetVelocity(Rigidbody body)
         {
-            return body != null ? body.velocity : Vector3.zero;
+            return body != null ? body.linearVelocity : Vector3.zero;
         }
 
         private static Vector3 GetVelocity(Rigidbody2D body)
         {
-            return body != null ? new Vector3(body.velocity.x, body.velocity.y, 0f) : Vector3.zero;
+            return body != null ? new Vector3(body.linearVelocity.x, body.linearVelocity.y, 0f) : Vector3.zero;
         }
 
         private static Vector3? ResolveRadiusCenter(SceneRadiusFilterInput filter)
