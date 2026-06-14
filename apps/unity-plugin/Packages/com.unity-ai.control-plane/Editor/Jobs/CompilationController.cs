@@ -26,7 +26,9 @@ namespace UnityAI.ControlPlane.Editor
         public bool isCompiling;
         public bool isUpdating;
         public int errorCount;
+        public int rawErrorCount;
         public int warningCount;
+        public int nonBlockingIssueCount;
         public bool clean;
         public string capturedAtUtc;
     }
@@ -54,9 +56,11 @@ namespace UnityAI.ControlPlane.Editor
             {
                 isCompiling = EditorApplication.isCompiling,
                 isUpdating = EditorApplication.isUpdating,
-                errorCount = console.errorCount,
+                errorCount = console.compilationErrorCount,
+                rawErrorCount = console.errorCount,
                 warningCount = console.warningCount,
-                clean = !EditorApplication.isCompiling && !EditorApplication.isUpdating && console.errorCount == 0,
+                nonBlockingIssueCount = console.nonBlockingIssueCount,
+                clean = !EditorApplication.isCompiling && !EditorApplication.isUpdating && console.compilationErrorCount == 0,
                 capturedAtUtc = DateTime.UtcNow.ToString("O")
             };
         }

@@ -14,6 +14,17 @@ namespace UnityAI.ControlPlane.Editor
         public int errorCount;
         public int warningCount;
         public int logCount;
+        public int compilationErrorCount;
+        public int compilationWarningCount;
+        public int runtimeErrorCount;
+        public int runtimeWarningCount;
+        public int bridgeErrorCount;
+        public int bridgeWarningCount;
+        public int importErrorCount;
+        public int importWarningCount;
+        public int blockingErrorCount;
+        public int nonBlockingIssueCount;
+        public bool hasBlockingErrors;
         public List<ConsoleLogEntry> recentEntries = new();
     }
 
@@ -23,6 +34,12 @@ namespace UnityAI.ControlPlane.Editor
         public string type;
         public string condition;
         public string stackTrace;
+        public string file;
+        public int line;
+        public string category;
+        public string classification;
+        public string severity;
+        public bool blocking;
     }
 
     [Serializable]
@@ -34,7 +51,18 @@ namespace UnityAI.ControlPlane.Editor
         public int logCount;
         public int totalEntries;
         public int diagnosticCount;
+        public int compilationErrorCount;
+        public int compilationWarningCount;
+        public int runtimeErrorCount;
+        public int runtimeWarningCount;
+        public int bridgeErrorCount;
+        public int bridgeWarningCount;
+        public int importErrorCount;
+        public int importWarningCount;
+        public int blockingErrorCount;
+        public int nonBlockingIssueCount;
         public bool hasErrors;
+        public bool hasBlockingErrors;
         public List<ConsoleDiagnosticEntry> diagnostics = new();
     }
 
@@ -42,7 +70,9 @@ namespace UnityAI.ControlPlane.Editor
     public sealed class ConsoleDiagnosticEntry
     {
         public string category;
+        public string classification;
         public string severity;
+        public bool blocking;
         public string message;
         public string file;
         public int line;
@@ -140,6 +170,8 @@ namespace UnityAI.ControlPlane.Editor
         private const int MaxEntries = 100;
         private static readonly int ErrorModeMask = ResolveLogMessageFlags("Error", "Fatal", "Assert", "AssetImportError", "ScriptingError", "ScriptingException", "ScriptCompileError", "ScriptingAssertion", "GraphError", "VisualScriptingError");
         private static readonly int WarningModeMask = ResolveLogMessageFlags("Warning", "AssetImportWarning", "ScriptingWarning", "ScriptCompileWarning");
+        private static readonly int CompilerErrorModeMask = ResolveLogMessageFlags("ScriptCompileError");
+        private static readonly int CompilerWarningModeMask = ResolveLogMessageFlags("ScriptCompileWarning");
         private static readonly List<ConsoleLogEntry> RecentEntries = new();
 
         static ConsoleLogBridge()
@@ -152,29 +184,22 @@ namespace UnityAI.ControlPlane.Editor
         {
             var summary = new ConsoleLogSummary();
             TryReadEditorConsoleCounts(summary);
-            summary.recentEntries = new List<ConsoleLogEntry>(RecentEntries);
+            foreach (var entry in CollectEntries())
+            {
+                var logEntry = BuildLogEntry(entry);
+                summary.recentEntries.Add(logEntry);
+                IncrementClassificationCounts(summary, logEntry.classification, logEntry.severity, logEntry.blocking);
+            }
+
+            summary.hasBlockingErrors = summary.blockingErrorCount > 0;
             return summary;
         }
 
         public static ConsoleDiagnosticReport Diagnose()
         {
-            var summary = GetSummary();
-            var entries = TryReadEditorConsoleEntries();
-
-            foreach (var recentEntry in RecentEntries)
-            {
-                var recentSnapshot = new ConsoleEntrySnapshot
-                {
-                    type = recentEntry.type,
-                    message = recentEntry.condition,
-                    stackTrace = recentEntry.stackTrace
-                };
-
-                if (!ContainsEquivalentEntry(entries, recentSnapshot))
-                {
-                    entries.Add(recentSnapshot);
-                }
-            }
+            var summary = new ConsoleLogSummary();
+            TryReadEditorConsoleCounts(summary);
+            var entries = CollectEntries();
 
             var report = new ConsoleDiagnosticReport
             {
@@ -189,6 +214,7 @@ namespace UnityAI.ControlPlane.Editor
             {
                 var diagnostic = BuildDiagnostic(entry);
                 report.diagnostics.Add(diagnostic);
+                IncrementClassificationCounts(report, diagnostic.classification, diagnostic.severity, diagnostic.blocking);
 
                 if (diagnostic.severity == "error")
                 {
@@ -197,6 +223,7 @@ namespace UnityAI.ControlPlane.Editor
             }
 
             report.diagnosticCount = report.diagnostics.Count;
+            report.hasBlockingErrors = report.blockingErrorCount > 0;
             return report;
         }
 
@@ -647,17 +674,67 @@ namespace UnityAI.ControlPlane.Editor
 
         private static void OnLogMessageReceived(string condition, string stackTrace, LogType type)
         {
-            RecentEntries.Add(new ConsoleLogEntry
+            RecentEntries.Add(BuildLogEntry(new ConsoleEntrySnapshot
             {
                 type = type.ToString(),
-                condition = condition,
+                message = condition,
                 stackTrace = stackTrace
-            });
+            }));
 
             if (RecentEntries.Count > MaxEntries)
             {
                 RecentEntries.RemoveAt(0);
             }
+        }
+
+        private static List<ConsoleEntrySnapshot> CollectEntries()
+        {
+            var entries = TryReadEditorConsoleEntries();
+            foreach (var recentEntry in RecentEntries)
+            {
+                var recentSnapshot = new ConsoleEntrySnapshot
+                {
+                    type = recentEntry.type,
+                    message = recentEntry.condition,
+                    stackTrace = recentEntry.stackTrace,
+                    file = recentEntry.file,
+                    line = recentEntry.line
+                };
+
+                if (!ContainsEquivalentEntry(entries, recentSnapshot))
+                {
+                    entries.Add(recentSnapshot);
+                }
+            }
+
+            if (entries.Count > MaxEntries)
+            {
+                entries.RemoveRange(0, entries.Count - MaxEntries);
+            }
+
+            return entries;
+        }
+
+        private static ConsoleLogEntry BuildLogEntry(ConsoleEntrySnapshot entry)
+        {
+            var message = SanitizeDiagnosticText(entry.message);
+            var stackTrace = SanitizeDiagnosticText(entry.stackTrace);
+            var severity = DetermineSeverity(entry, message);
+            var classification = ClassifyEntry(entry, severity, message, stackTrace);
+            var file = !string.IsNullOrWhiteSpace(entry.file) ? entry.file : ExtractUnityPath(message + "\n" + stackTrace);
+
+            return new ConsoleLogEntry
+            {
+                type = entry.type,
+                condition = message,
+                stackTrace = stackTrace,
+                file = file,
+                line = entry.line > 0 ? entry.line : ExtractLine(message + "\n" + stackTrace),
+                category = ToLegacyCategory(classification),
+                classification = classification,
+                severity = severity,
+                blocking = IsBlockingClassification(classification)
+            };
         }
 
         private static void TryReadEditorConsoleCounts(ConsoleLogSummary summary)
@@ -748,12 +825,15 @@ namespace UnityAI.ControlPlane.Editor
             var file = !string.IsNullOrWhiteSpace(entry.file) ? entry.file : ExtractUnityPath(message + "\n" + stackTrace);
             var line = entry.line > 0 ? entry.line : ExtractLine(message + "\n" + stackTrace);
             var severity = DetermineSeverity(entry, message);
-            var category = ClassifyEntry(severity, message, stackTrace);
+            var classification = ClassifyEntry(entry, severity, message, stackTrace);
+            var category = ToLegacyCategory(classification);
 
             return new ConsoleDiagnosticEntry
             {
                 category = category,
+                classification = classification,
                 severity = severity,
+                blocking = IsBlockingClassification(classification),
                 message = message,
                 file = file,
                 line = line,
@@ -980,31 +1060,182 @@ namespace UnityAI.ControlPlane.Editor
             return mask;
         }
 
-        private static string ClassifyEntry(string severity, string message, string stackTrace)
+        private static string ClassifyEntry(ConsoleEntrySnapshot entry, string severity, string message, string stackTrace)
         {
             var text = (message + "\n" + stackTrace).Trim();
 
-            if (text.Contains("error CS", StringComparison.OrdinalIgnoreCase) || text.Contains("Compilation failed", StringComparison.OrdinalIgnoreCase))
+            if ((entry.mode & CompilerErrorModeMask) != 0
+                || text.Contains("error CS", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("Compilation failed", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("Scripts have compiler errors", StringComparison.OrdinalIgnoreCase))
             {
-                return "compiler_error";
+                return "CompilationError";
             }
 
-            if (text.Contains("Importer", StringComparison.OrdinalIgnoreCase) || text.Contains("failed to import", StringComparison.OrdinalIgnoreCase) || text.Contains("Asset import", StringComparison.OrdinalIgnoreCase))
+            if ((entry.mode & CompilerWarningModeMask) != 0
+                || text.Contains("warning CS", StringComparison.OrdinalIgnoreCase))
             {
-                return "import_error";
+                return "CompilationWarning";
             }
 
-            if (text.Contains("Exception", StringComparison.OrdinalIgnoreCase) || text.Contains("NullReferenceException", StringComparison.OrdinalIgnoreCase))
+            if (IsBridgeMessage(text))
             {
-                return "runtime_exception";
+                return severity == "error"
+                    ? "BridgeError"
+                    : severity == "warning" ? "BridgeWarning" : "Info";
+            }
+
+            if (text.Contains("Importer", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("failed to import", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("Asset import", StringComparison.OrdinalIgnoreCase))
+            {
+                return severity == "error"
+                    ? "ImportError"
+                    : severity == "warning" ? "ImportWarning" : "Info";
             }
 
             if (severity == "warning")
             {
-                return "warning";
+                return "RuntimeWarning";
             }
 
-            return "unknown";
+            if (severity == "error"
+                || text.Contains("Exception", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("NullReferenceException", StringComparison.OrdinalIgnoreCase))
+            {
+                return "RuntimeError";
+            }
+
+            return "Info";
+        }
+
+        private static bool IsBridgeMessage(string text)
+        {
+            return text.Contains("Unity AI bridge", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("UnityAiBridge", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("UnityAI.ControlPlane", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("bridge request", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("bridge server", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("fetch failed", StringComparison.OrdinalIgnoreCase)
+                && (text.Contains("localhost", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("bridge", StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool IsBlockingClassification(string classification)
+        {
+            return string.Equals(classification, "CompilationError", StringComparison.Ordinal);
+        }
+
+        private static string ToLegacyCategory(string classification)
+        {
+            switch (classification)
+            {
+                case "CompilationError":
+                    return "compiler_error";
+                case "ImportError":
+                case "ImportWarning":
+                    return "import_error";
+                case "RuntimeError":
+                    return "runtime_exception";
+                case "RuntimeWarning":
+                case "CompilationWarning":
+                    return "warning";
+                case "BridgeError":
+                case "BridgeWarning":
+                    return "bridge_error";
+                default:
+                    return "unknown";
+            }
+        }
+
+        private static void IncrementClassificationCounts(ConsoleLogSummary summary, string classification, string severity, bool blocking)
+        {
+            IncrementClassificationCounts(
+                classification,
+                severity,
+                blocking,
+                value => summary.compilationErrorCount += value,
+                value => summary.compilationWarningCount += value,
+                value => summary.runtimeErrorCount += value,
+                value => summary.runtimeWarningCount += value,
+                value => summary.bridgeErrorCount += value,
+                value => summary.bridgeWarningCount += value,
+                value => summary.importErrorCount += value,
+                value => summary.importWarningCount += value,
+                value => summary.blockingErrorCount += value,
+                value => summary.nonBlockingIssueCount += value);
+        }
+
+        private static void IncrementClassificationCounts(ConsoleDiagnosticReport report, string classification, string severity, bool blocking)
+        {
+            IncrementClassificationCounts(
+                classification,
+                severity,
+                blocking,
+                value => report.compilationErrorCount += value,
+                value => report.compilationWarningCount += value,
+                value => report.runtimeErrorCount += value,
+                value => report.runtimeWarningCount += value,
+                value => report.bridgeErrorCount += value,
+                value => report.bridgeWarningCount += value,
+                value => report.importErrorCount += value,
+                value => report.importWarningCount += value,
+                value => report.blockingErrorCount += value,
+                value => report.nonBlockingIssueCount += value);
+        }
+
+        private static void IncrementClassificationCounts(
+            string classification,
+            string severity,
+            bool blocking,
+            Action<int> compilationError,
+            Action<int> compilationWarning,
+            Action<int> runtimeError,
+            Action<int> runtimeWarning,
+            Action<int> bridgeError,
+            Action<int> bridgeWarning,
+            Action<int> importError,
+            Action<int> importWarning,
+            Action<int> blockingError,
+            Action<int> nonBlockingIssue)
+        {
+            switch (classification)
+            {
+                case "CompilationError":
+                    compilationError(1);
+                    break;
+                case "CompilationWarning":
+                    compilationWarning(1);
+                    break;
+                case "RuntimeError":
+                    runtimeError(1);
+                    break;
+                case "RuntimeWarning":
+                    runtimeWarning(1);
+                    break;
+                case "BridgeError":
+                    bridgeError(1);
+                    break;
+                case "BridgeWarning":
+                    bridgeWarning(1);
+                    break;
+                case "ImportError":
+                    importError(1);
+                    break;
+                case "ImportWarning":
+                    importWarning(1);
+                    break;
+            }
+
+            if (blocking)
+            {
+                blockingError(1);
+            }
+            else if (severity == "error" || severity == "warning")
+            {
+                nonBlockingIssue(1);
+            }
         }
 
         private static string SummarizeRootCause(string category, string message, string file, int line)

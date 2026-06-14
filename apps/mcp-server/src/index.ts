@@ -101,7 +101,7 @@ server.registerTool(
 server.registerTool(
   "unity.console.read",
   {
-    description: "Read Unity Console summary and recent log entries through the local Unity Editor bridge.",
+    description: "Read Unity Console entries with strict compilation, runtime, bridge, and import classifications plus blocking status.",
     inputSchema: z.object({})
   },
   async () => bridgeTool("unity.console.read")
@@ -110,7 +110,7 @@ server.registerTool(
 server.registerTool(
   "unity.console.diagnose",
   {
-    description: "Diagnose Unity Console compiler/runtime issues as structured, read-only guidance.",
+    description: "Classify Unity Console entries into blocking CompilationError and non-blocking runtime, bridge, import, or warning diagnostics.",
     inputSchema: z.object({})
   },
   async () => bridgeTool("unity.console.diagnose")

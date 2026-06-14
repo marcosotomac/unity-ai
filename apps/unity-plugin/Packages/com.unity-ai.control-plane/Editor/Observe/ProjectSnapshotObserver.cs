@@ -46,7 +46,10 @@ namespace UnityAI.ControlPlane.Editor
         public int warningCount;
         public int logCount;
         public int diagnosticCount;
+        public int compilationErrorCount;
+        public int nonBlockingIssueCount;
         public bool hasErrors;
+        public bool hasBlockingErrors;
         public ConsoleDiagnosticEntry[] topDiagnostics = Array.Empty<ConsoleDiagnosticEntry>();
     }
 
@@ -184,7 +187,10 @@ namespace UnityAI.ControlPlane.Editor
                 warningCount = report.warningCount,
                 logCount = report.logCount,
                 diagnosticCount = report.diagnosticCount,
+                compilationErrorCount = report.compilationErrorCount,
+                nonBlockingIssueCount = report.nonBlockingIssueCount,
                 hasErrors = report.hasErrors,
+                hasBlockingErrors = report.hasBlockingErrors,
                 topDiagnostics = SelectTopDiagnostics(report.diagnostics).ToArray()
             };
         }
@@ -195,6 +201,7 @@ namespace UnityAI.ControlPlane.Editor
             AddDiagnosticsByCategory(diagnostics, selected, "compiler_error");
             AddDiagnosticsByCategory(diagnostics, selected, "runtime_exception");
             AddDiagnosticsByCategory(diagnostics, selected, "import_error");
+            AddDiagnosticsByCategory(diagnostics, selected, "bridge_error");
             AddDiagnosticsByCategory(diagnostics, selected, "warning");
             AddDiagnosticsByCategory(diagnostics, selected, "unknown");
             return selected;
@@ -406,7 +413,7 @@ namespace UnityAI.ControlPlane.Editor
         {
             var flags = new List<string> { "missing_bridge_token_not_relevant" };
 
-            if (snapshot.console.hasErrors)
+            if (snapshot.console.hasBlockingErrors)
             {
                 flags.Add("compiler_errors_present");
             }
@@ -448,7 +455,7 @@ namespace UnityAI.ControlPlane.Editor
         {
             var actions = new List<string>();
 
-            if (snapshot.console.hasErrors)
+            if (snapshot.console.hasBlockingErrors)
             {
                 actions.Add("run unity.console.diagnose");
                 actions.Add("run unity.console.plan_fix");
@@ -481,7 +488,7 @@ namespace UnityAI.ControlPlane.Editor
         {
             var signals = new List<string> { "structured_observation", "console_snapshot", "console_diagnostics", "environment_introspected" };
 
-            if (snapshot.console.errorCount == 0)
+            if (snapshot.console.compilationErrorCount == 0)
             {
                 signals.Add("console_clean");
             }

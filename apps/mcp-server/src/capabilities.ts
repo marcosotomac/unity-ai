@@ -24,14 +24,14 @@ export const initialCapabilities: CapabilityManifest[] = [
   },
   {
     name: "unity.console.read",
-    description: "Read Unity Console messages and summarize errors, warnings, and logs.",
+    description: "Read Unity Console entries with strict compilation, runtime, bridge, and import classifications plus blocking status.",
     permissions: ["read_console"],
     effects: ["report_only"],
     verification: ["console_snapshot"]
   },
   {
     name: "unity.console.diagnose",
-    description: "Classify Unity Console entries and return safe, structured diagnostic guidance.",
+    description: "Classify Unity Console entries into blocking CompilationError and non-blocking runtime, bridge, import, or warning diagnostics.",
     permissions: ["read_console"],
     effects: ["report_only"],
     verification: ["console_diagnostics"]
