@@ -2870,7 +2870,7 @@
     },
     {
       "name": "unity.scene.batch",
-      "description": "Apply an atomic, undo-backed batch of hierarchy, prefab, component, and serialized-property scene operations.",
+      "description": "Apply an atomic, undo-backed batch of hierarchy, prefab, component, serialized-property, and cross-object reference operations.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -3162,431 +3162,505 @@
                     "value": {
                       "anyOf": [
                         {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "bool"
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "bool"
+                                },
+                                "boolValue": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "boolValue"
+                              ],
+                              "additionalProperties": false
                             },
-                            "boolValue": {
-                              "type": "boolean"
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "integer"
+                                },
+                                "integerValue": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "integerValue"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "number"
+                                },
+                                "numberValue": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "numberValue"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "string"
+                                },
+                                "stringValue": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "stringValue"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "color"
+                                },
+                                "x": {
+                                  "type": "number"
+                                },
+                                "y": {
+                                  "type": "number"
+                                },
+                                "z": {
+                                  "type": "number"
+                                },
+                                "w": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "x",
+                                "y",
+                                "z",
+                                "w"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "vector2"
+                                },
+                                "x": {
+                                  "type": "number"
+                                },
+                                "y": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "x",
+                                "y"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "vector3"
+                                },
+                                "x": {
+                                  "type": "number"
+                                },
+                                "y": {
+                                  "type": "number"
+                                },
+                                "z": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "x",
+                                "y",
+                                "z"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "vector4"
+                                },
+                                "x": {
+                                  "type": "number"
+                                },
+                                "y": {
+                                  "type": "number"
+                                },
+                                "z": {
+                                  "type": "number"
+                                },
+                                "w": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "x",
+                                "y",
+                                "z",
+                                "w"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "vector2_int"
+                                },
+                                "x": {
+                                  "type": "integer"
+                                },
+                                "y": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "x",
+                                "y"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "vector3_int"
+                                },
+                                "x": {
+                                  "type": "integer"
+                                },
+                                "y": {
+                                  "type": "integer"
+                                },
+                                "z": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "x",
+                                "y",
+                                "z"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "rect"
+                                },
+                                "x": {
+                                  "type": "number"
+                                },
+                                "y": {
+                                  "type": "number"
+                                },
+                                "z": {
+                                  "type": "number"
+                                },
+                                "w": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "x",
+                                "y",
+                                "z",
+                                "w"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "rect_int"
+                                },
+                                "x": {
+                                  "type": "integer"
+                                },
+                                "y": {
+                                  "type": "integer"
+                                },
+                                "z": {
+                                  "type": "integer"
+                                },
+                                "w": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "x",
+                                "y",
+                                "z",
+                                "w"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "bounds"
+                                },
+                                "x": {
+                                  "type": "number"
+                                },
+                                "y": {
+                                  "type": "number"
+                                },
+                                "z": {
+                                  "type": "number"
+                                },
+                                "x2": {
+                                  "type": "number"
+                                },
+                                "y2": {
+                                  "type": "number"
+                                },
+                                "z2": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "x",
+                                "y",
+                                "z",
+                                "x2",
+                                "y2",
+                                "z2"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "bounds_int"
+                                },
+                                "x": {
+                                  "type": "integer"
+                                },
+                                "y": {
+                                  "type": "integer"
+                                },
+                                "z": {
+                                  "type": "integer"
+                                },
+                                "x2": {
+                                  "type": "integer"
+                                },
+                                "y2": {
+                                  "type": "integer"
+                                },
+                                "z2": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "x",
+                                "y",
+                                "z",
+                                "x2",
+                                "y2",
+                                "z2"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "quaternion"
+                                },
+                                "x": {
+                                  "type": "number"
+                                },
+                                "y": {
+                                  "type": "number"
+                                },
+                                "z": {
+                                  "type": "number"
+                                },
+                                "w": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "x",
+                                "y",
+                                "z",
+                                "w"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "enum"
+                                },
+                                "enumName": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "enumName"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "enum"
+                                },
+                                "enumIndex": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "enumIndex"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "object_reference"
+                                },
+                                "assetPath": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 512
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "assetPath"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "null"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "array_size"
+                                },
+                                "integerValue": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 100000
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "integerValue"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "character"
+                                },
+                                "integerValue": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 65535
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "integerValue"
+                              ],
+                              "additionalProperties": false
                             }
-                          },
-                          "required": [
-                            "kind",
-                            "boolValue"
-                          ],
-                          "additionalProperties": false
+                          ]
                         },
                         {
                           "type": "object",
                           "properties": {
                             "kind": {
                               "type": "string",
-                              "const": "integer"
+                              "const": "game_object_reference"
                             },
-                            "integerValue": {
-                              "type": "integer",
-                              "minimum": -9007199254740991,
-                              "maximum": 9007199254740991
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "integerValue"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "number"
-                            },
-                            "numberValue": {
-                              "type": "number"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "numberValue"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "string"
-                            },
-                            "stringValue": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "stringValue"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "color"
-                            },
-                            "x": {
-                              "type": "number"
-                            },
-                            "y": {
-                              "type": "number"
-                            },
-                            "z": {
-                              "type": "number"
-                            },
-                            "w": {
-                              "type": "number"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "x",
-                            "y",
-                            "z",
-                            "w"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "vector2"
-                            },
-                            "x": {
-                              "type": "number"
-                            },
-                            "y": {
-                              "type": "number"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "x",
-                            "y"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "vector3"
-                            },
-                            "x": {
-                              "type": "number"
-                            },
-                            "y": {
-                              "type": "number"
-                            },
-                            "z": {
-                              "type": "number"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "x",
-                            "y",
-                            "z"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "vector4"
-                            },
-                            "x": {
-                              "type": "number"
-                            },
-                            "y": {
-                              "type": "number"
-                            },
-                            "z": {
-                              "type": "number"
-                            },
-                            "w": {
-                              "type": "number"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "x",
-                            "y",
-                            "z",
-                            "w"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "vector2_int"
-                            },
-                            "x": {
-                              "type": "integer"
-                            },
-                            "y": {
-                              "type": "integer"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "x",
-                            "y"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "vector3_int"
-                            },
-                            "x": {
-                              "type": "integer"
-                            },
-                            "y": {
-                              "type": "integer"
-                            },
-                            "z": {
-                              "type": "integer"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "x",
-                            "y",
-                            "z"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "rect"
-                            },
-                            "x": {
-                              "type": "number"
-                            },
-                            "y": {
-                              "type": "number"
-                            },
-                            "z": {
-                              "type": "number"
-                            },
-                            "w": {
-                              "type": "number"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "x",
-                            "y",
-                            "z",
-                            "w"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "rect_int"
-                            },
-                            "x": {
-                              "type": "integer"
-                            },
-                            "y": {
-                              "type": "integer"
-                            },
-                            "z": {
-                              "type": "integer"
-                            },
-                            "w": {
-                              "type": "integer"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "x",
-                            "y",
-                            "z",
-                            "w"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "bounds"
-                            },
-                            "x": {
-                              "type": "number"
-                            },
-                            "y": {
-                              "type": "number"
-                            },
-                            "z": {
-                              "type": "number"
-                            },
-                            "x2": {
-                              "type": "number"
-                            },
-                            "y2": {
-                              "type": "number"
-                            },
-                            "z2": {
-                              "type": "number"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "x",
-                            "y",
-                            "z",
-                            "x2",
-                            "y2",
-                            "z2"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "bounds_int"
-                            },
-                            "x": {
-                              "type": "integer"
-                            },
-                            "y": {
-                              "type": "integer"
-                            },
-                            "z": {
-                              "type": "integer"
-                            },
-                            "x2": {
-                              "type": "integer"
-                            },
-                            "y2": {
-                              "type": "integer"
-                            },
-                            "z2": {
-                              "type": "integer"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "x",
-                            "y",
-                            "z",
-                            "x2",
-                            "y2",
-                            "z2"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "quaternion"
-                            },
-                            "x": {
-                              "type": "number"
-                            },
-                            "y": {
-                              "type": "number"
-                            },
-                            "z": {
-                              "type": "number"
-                            },
-                            "w": {
-                              "type": "number"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "x",
-                            "y",
-                            "z",
-                            "w"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "enum"
-                            },
-                            "enumName": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 200
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "enumName"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "enum"
-                            },
-                            "enumIndex": {
-                              "type": "integer",
-                              "minimum": 0
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "enumIndex"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "object_reference"
-                            },
-                            "assetPath": {
+                            "path": {
                               "type": "string",
                               "minLength": 1,
                               "maxLength": 512
@@ -3594,7 +3668,7 @@
                           },
                           "required": [
                             "kind",
-                            "assetPath"
+                            "path"
                           ],
                           "additionalProperties": false
                         },
@@ -3603,49 +3677,28 @@
                           "properties": {
                             "kind": {
                               "type": "string",
-                              "const": "null"
-                            }
-                          },
-                          "required": [
-                            "kind"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "array_size"
+                              "const": "component_reference"
                             },
-                            "integerValue": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512
+                            },
+                            "componentType": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            },
+                            "componentIndex": {
                               "type": "integer",
                               "minimum": 0,
-                              "maximum": 100000
+                              "default": 0
                             }
                           },
                           "required": [
                             "kind",
-                            "integerValue"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "const": "character"
-                            },
-                            "integerValue": {
-                              "type": "integer",
-                              "minimum": 0,
-                              "maximum": 65535
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "integerValue"
+                            "path",
+                            "componentType"
                           ],
                           "additionalProperties": false
                         }

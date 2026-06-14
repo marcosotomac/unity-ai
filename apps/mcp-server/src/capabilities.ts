@@ -87,7 +87,7 @@ export const initialCapabilities: CapabilityManifest[] = [
   },
   {
     name: "unity.scene.batch",
-    description: "Apply an atomic, undo-backed batch of scene hierarchy and serialized component operations.",
+    description: "Apply an atomic, undo-backed batch of scene hierarchy, serialized component, and cross-object reference operations.",
     permissions: ["read_assets", "modify_scenes"],
     effects: ["report_only", "write_audit_log", "scene_change"],
     verification: ["operation_audited", "structured_observation", "scene_mutation_verified", "batch_applied", "component_state_verified"]

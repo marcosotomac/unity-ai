@@ -24,6 +24,9 @@ namespace UnityAI.ControlPlane.Editor
         public float y2;
         public float z2;
         public string assetPath;
+        public string path;
+        public string componentType;
+        public int componentIndex;
         public string enumName;
         public int enumIndex;
     }
@@ -507,6 +510,12 @@ namespace UnityAI.ControlPlane.Editor
                 case "object_reference" when property.propertyType == SerializedPropertyType.ObjectReference:
                     property.objectReferenceValue = LoadObjectReference(input.assetPath);
                     return;
+                case "game_object_reference" when property.propertyType == SerializedPropertyType.ObjectReference:
+                    property.objectReferenceValue = RequireTarget(NormalizePath(input.path));
+                    return;
+                case "component_reference" when property.propertyType == SerializedPropertyType.ObjectReference:
+                    property.objectReferenceValue = ResolveSceneComponentReference(input);
+                    return;
                 case "null" when property.propertyType == SerializedPropertyType.ObjectReference:
                     property.objectReferenceValue = null;
                     return;
@@ -563,6 +572,10 @@ namespace UnityAI.ControlPlane.Editor
                     return property.enumValueIndex == ResolveEnumIndex(property, input);
                 case "object_reference":
                     return property.objectReferenceValue == LoadObjectReference(input.assetPath);
+                case "game_object_reference":
+                    return property.objectReferenceValue == RequireTarget(NormalizePath(input.path));
+                case "component_reference":
+                    return property.objectReferenceValue == ResolveSceneComponentReference(input);
                 case "null":
                     return property.objectReferenceValue == null;
                 case "array_size":
@@ -571,6 +584,14 @@ namespace UnityAI.ControlPlane.Editor
                 default:
                     return false;
             }
+        }
+
+        private static Component ResolveSceneComponentReference(SceneSerializedValueInput input)
+        {
+            var path = NormalizePath(input.path);
+            var target = RequireTarget(path);
+            var type = ResolveComponentType(input.componentType);
+            return RequireComponent(target.GetComponents(type), input.componentIndex, type, path);
         }
 
         private static int ResolveEnumIndex(SerializedProperty property, SceneSerializedValueInput input)
@@ -684,6 +705,25 @@ namespace UnityAI.ControlPlane.Editor
                 {
                     refusal = $"operations[{index}].prefabPath must be a safe Assets/ or Packages/ path.";
                     return false;
+                }
+
+                if (kind == "set_property")
+                {
+                    var value = operation.value ?? new SceneSerializedValueInput();
+                    var valueKind = Normalize(value.kind);
+                    if ((valueKind == "game_object_reference" || valueKind == "component_reference")
+                        && !IsSafeScenePath(value.path, false))
+                    {
+                        refusal = $"operations[{index}].value.path is not a safe scene hierarchy path.";
+                        return false;
+                    }
+
+                    if (valueKind == "component_reference"
+                        && (string.IsNullOrWhiteSpace(value.componentType) || value.componentIndex < 0))
+                    {
+                        refusal = $"operations[{index}].value requires componentType and a non-negative componentIndex.";
+                        return false;
+                    }
                 }
             }
 

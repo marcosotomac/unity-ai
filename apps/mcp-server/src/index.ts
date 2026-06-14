@@ -242,7 +242,7 @@ server.registerTool(
   async (input) => bridgeTool("unity.scene.upsert_game_object", input)
 );
 
-const sceneSerializedValueSchema = z.union([
+const serializedValueSchema = z.union([
   z.object({ kind: z.literal("bool"), boolValue: z.boolean() }).strict(),
   z.object({ kind: z.literal("integer"), integerValue: z.number().int().safe() }).strict(),
   z.object({ kind: z.literal("number"), numberValue: z.number().finite() }).strict(),
@@ -280,6 +280,20 @@ const sceneSerializedValueSchema = z.union([
   z.object({ kind: z.literal("null") }).strict(),
   z.object({ kind: z.literal("array_size"), integerValue: z.number().int().min(0).max(100000) }).strict(),
   z.object({ kind: z.literal("character"), integerValue: z.number().int().min(0).max(65535) }).strict()
+]);
+
+const sceneSerializedValueSchema = z.union([
+  serializedValueSchema,
+  z.object({
+    kind: z.literal("game_object_reference"),
+    path: z.string().min(1).max(512)
+  }).strict(),
+  z.object({
+    kind: z.literal("component_reference"),
+    path: z.string().min(1).max(512),
+    componentType: z.string().min(1).max(256),
+    componentIndex: z.number().int().min(0).default(0)
+  }).strict()
 ]);
 
 const sceneBatchOperationSchema = z.discriminatedUnion("kind", [
@@ -343,7 +357,7 @@ const sceneBatchOperationSchema = z.discriminatedUnion("kind", [
 server.registerTool(
   "unity.scene.batch",
   {
-    description: "Apply an atomic, undo-backed batch of hierarchy, prefab, component, and serialized-property scene operations.",
+    description: "Apply an atomic, undo-backed batch of hierarchy, prefab, component, serialized-property, and cross-object reference operations.",
     inputSchema: z.object({
       dryRun: z.boolean().default(true),
       confirm: z.boolean().default(false),
@@ -951,7 +965,7 @@ const prefabEditSchema = z.object({
   componentType: z.string().min(1).max(256).optional(),
   componentIndex: z.number().int().min(0).default(0),
   propertyPath: z.string().min(1).max(512).optional(),
-  value: sceneSerializedValueSchema.optional()
+  value: serializedValueSchema.optional()
 }).strict();
 
 server.registerTool(
