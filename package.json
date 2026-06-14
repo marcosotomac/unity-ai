@@ -27,6 +27,9 @@
   ],
   "scripts": {
     "build": "tsc -b",
+    "schemas:antigravity": "npm run build && node scripts/sync-mcp-tool-schemas.mjs --antigravity",
+    "schemas:check": "npm run build && node scripts/sync-mcp-tool-schemas.mjs --check",
+    "schemas:generate": "npm run build && node scripts/sync-mcp-tool-schemas.mjs --write-repo",
     "setup:user": "node scripts/setup-user.mjs",
     "typecheck": "tsc -b",
     "verify:bridge-retry": "npm run build && node scripts/verify-bridge-retry.mjs",

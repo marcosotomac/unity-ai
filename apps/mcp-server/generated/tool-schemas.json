@@ -1,0 +1,3801 @@
+{
+  "schemaVersion": 1,
+  "server": "unity-ai-control-plane",
+  "tools": [
+    {
+      "name": "unity.assemblies.list",
+      "description": "List Unity script assemblies and assembly definition metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "maxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 500
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.asset.dependencies",
+      "description": "Inspect direct or recursive dependencies for a Unity asset path.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "recursive": {
+            "type": "boolean",
+            "default": true
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 200
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.assets.author",
+      "description": "Create or edit shaders, materials, animation clips, Animator Controllers, generated WAV audio, and audio import settings with checkpoints.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "shader",
+              "material",
+              "animation_clip",
+              "animator_controller",
+              "audio_tone",
+              "audio_import"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "shaderSource": {
+            "type": "string",
+            "maxLength": 1048576
+          },
+          "shaderName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "shaderPath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "materialProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "float",
+                    "int",
+                    "color",
+                    "vector",
+                    "texture"
+                  ]
+                },
+                "numberValue": {
+                  "type": "number"
+                },
+                "integerValue": {
+                  "type": "integer"
+                },
+                "assetPath": {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                },
+                "z": {
+                  "type": "number"
+                },
+                "w": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "name",
+                "kind"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 500,
+            "default": []
+          },
+          "enabledKeywords": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "maxItems": 200,
+            "default": []
+          },
+          "renderQueue": {
+            "type": "integer",
+            "minimum": -1,
+            "maximum": 5000,
+            "default": -1
+          },
+          "clearExistingCurves": {
+            "type": "boolean",
+            "default": false
+          },
+          "frameRate": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 240,
+            "default": 60
+          },
+          "animationCurves": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "relativePath": {
+                  "type": "string",
+                  "maxLength": 512,
+                  "default": ""
+                },
+                "componentType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "default": "UnityEngine.Transform"
+                },
+                "propertyName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "keyframes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "time": {
+                        "type": "number"
+                      },
+                      "value": {
+                        "type": "number"
+                      },
+                      "inTangent": {
+                        "type": "number",
+                        "default": 0
+                      },
+                      "outTangent": {
+                        "type": "number",
+                        "default": 0
+                      }
+                    },
+                    "required": [
+                      "time",
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "minItems": 1,
+                  "maxItems": 10000
+                }
+              },
+              "required": [
+                "propertyName",
+                "keyframes"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 500,
+            "default": []
+          },
+          "clearExistingStates": {
+            "type": "boolean",
+            "default": true
+          },
+          "defaultState": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "animatorParameters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "float",
+                    "int",
+                    "bool",
+                    "trigger"
+                  ],
+                  "default": "float"
+                },
+                "defaultFloat": {
+                  "type": "number",
+                  "default": 0
+                },
+                "defaultInt": {
+                  "type": "integer",
+                  "default": 0
+                },
+                "defaultBool": {
+                  "type": "boolean",
+                  "default": false
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 100,
+            "default": []
+          },
+          "animatorStates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "clipPath": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "clipName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "speed": {
+                  "type": "number",
+                  "minimum": -100,
+                  "maximum": 100,
+                  "default": 1
+                },
+                "writeDefaultValues": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "positionX": {
+                  "type": "number",
+                  "default": 0
+                },
+                "positionY": {
+                  "type": "number",
+                  "default": 0
+                }
+              },
+              "required": [
+                "name",
+                "clipPath"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 200,
+            "default": []
+          },
+          "animatorTransitions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fromState": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "toState": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "hasExitTime": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "exitTime": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000,
+                  "default": 1
+                },
+                "duration": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000,
+                  "default": 0.1
+                },
+                "hasFixedDuration": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "offset": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "default": 0
+                },
+                "canTransitionToSelf": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "conditions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "if",
+                          "if_not",
+                          "greater",
+                          "less",
+                          "equals",
+                          "not_equal"
+                        ],
+                        "default": "if"
+                      },
+                      "threshold": {
+                        "type": "number",
+                        "default": 0
+                      },
+                      "parameter": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "required": [
+                      "parameter"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 20,
+                  "default": []
+                }
+              },
+              "required": [
+                "fromState",
+                "toState"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 500,
+            "default": []
+          },
+          "audioTone": {
+            "type": "object",
+            "properties": {
+              "frequencyHz": {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 86000,
+                "default": 440
+              },
+              "durationSeconds": {
+                "type": "number",
+                "minimum": 0.01,
+                "maximum": 300,
+                "default": 1
+              },
+              "sampleRate": {
+                "type": "integer",
+                "minimum": 8000,
+                "maximum": 192000,
+                "default": 44100
+              },
+              "channels": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2,
+                "default": 1
+              },
+              "amplitude": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "default": 0.5
+              }
+            },
+            "additionalProperties": false
+          },
+          "audioImport": {
+            "type": "object",
+            "properties": {
+              "forceToMono": {
+                "type": "boolean",
+                "default": false
+              },
+              "loadInBackground": {
+                "type": "boolean",
+                "default": false
+              },
+              "preloadAudioData": {
+                "type": "boolean",
+                "default": true
+              },
+              "loadType": {
+                "type": "string",
+                "enum": [
+                  "decompress_on_load",
+                  "compressed_in_memory",
+                  "streaming"
+                ],
+                "default": "decompress_on_load"
+              },
+              "compressionFormat": {
+                "type": "string",
+                "enum": [
+                  "vorbis",
+                  "pcm",
+                  "adpcm"
+                ],
+                "default": "vorbis"
+              },
+              "quality": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "default": 0.7
+              },
+              "sampleRateOverride": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 192000,
+                "default": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "kind",
+          "path"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.assets.import",
+      "description": "Copy or download a model, texture, or audio file, apply importer settings, and optionally instantiate it or save a prefab.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "sourceKind": {
+            "type": "string",
+            "enum": [
+              "local",
+              "url"
+            ],
+            "default": "local"
+          },
+          "sourcePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 4096
+          },
+          "destinationPath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "overwrite": {
+            "type": "boolean",
+            "default": false
+          },
+          "expectedSha256": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          },
+          "maxBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483648,
+            "default": 268435456
+          },
+          "timeoutSeconds": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 1800,
+            "default": 120
+          },
+          "allowInsecureLocalhost": {
+            "type": "boolean",
+            "default": false
+          },
+          "model": {
+            "type": "object",
+            "properties": {
+              "globalScale": {
+                "type": "number",
+                "minimum": 0.0001,
+                "maximum": 10000,
+                "default": 1
+              },
+              "useFileScale": {
+                "type": "boolean",
+                "default": true
+              },
+              "importBlendShapes": {
+                "type": "boolean",
+                "default": true
+              },
+              "importVisibility": {
+                "type": "boolean",
+                "default": true
+              },
+              "importCameras": {
+                "type": "boolean",
+                "default": false
+              },
+              "importLights": {
+                "type": "boolean",
+                "default": false
+              },
+              "addCollider": {
+                "type": "boolean",
+                "default": false
+              },
+              "importAnimation": {
+                "type": "boolean",
+                "default": true
+              },
+              "animationType": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "legacy",
+                  "generic",
+                  "human"
+                ],
+                "default": "generic"
+              },
+              "isReadable": {
+                "type": "boolean",
+                "default": false
+              },
+              "meshCompression": {
+                "type": "string",
+                "enum": [
+                  "off",
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "default": "off"
+              }
+            },
+            "additionalProperties": false
+          },
+          "texture": {
+            "type": "object",
+            "properties": {
+              "textureType": {
+                "type": "string",
+                "enum": [
+                  "default",
+                  "normal_map",
+                  "sprite",
+                  "cursor",
+                  "cookie",
+                  "lightmap",
+                  "single_channel"
+                ],
+                "default": "default"
+              },
+              "sRgb": {
+                "type": "boolean",
+                "default": true
+              },
+              "alphaIsTransparency": {
+                "type": "boolean",
+                "default": false
+              },
+              "mipmapEnabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "isReadable": {
+                "type": "boolean",
+                "default": false
+              },
+              "maxTextureSize": {
+                "type": "integer",
+                "minimum": 32,
+                "maximum": 16384,
+                "default": 2048
+              },
+              "compression": {
+                "type": "string",
+                "enum": [
+                  "uncompressed",
+                  "compressed",
+                  "compressed_hq",
+                  "compressed_lq"
+                ],
+                "default": "compressed"
+              }
+            },
+            "additionalProperties": false
+          },
+          "audio": {
+            "type": "object",
+            "properties": {
+              "forceToMono": {
+                "type": "boolean",
+                "default": false
+              },
+              "loadInBackground": {
+                "type": "boolean",
+                "default": false
+              },
+              "preloadAudioData": {
+                "type": "boolean",
+                "default": true
+              },
+              "loadType": {
+                "type": "string",
+                "enum": [
+                  "decompress_on_load",
+                  "compressed_in_memory",
+                  "streaming"
+                ],
+                "default": "decompress_on_load"
+              },
+              "compressionFormat": {
+                "type": "string",
+                "enum": [
+                  "vorbis",
+                  "pcm",
+                  "adpcm"
+                ],
+                "default": "vorbis"
+              },
+              "quality": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "default": 0.7
+              },
+              "sampleRateOverride": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 192000,
+                "default": 0
+              }
+            },
+            "additionalProperties": false
+          },
+          "instantiate": {
+            "type": "boolean",
+            "default": false
+          },
+          "objectName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "parentPath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "transform": {
+            "type": "object",
+            "properties": {
+              "position": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  },
+                  "z": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "z"
+                ],
+                "additionalProperties": false
+              },
+              "rotationEuler": {
+                "$ref": "#/properties/transform/properties/position"
+              },
+              "scale": {
+                "$ref": "#/properties/transform/properties/position"
+              }
+            },
+            "additionalProperties": false
+          },
+          "saveAsPrefabPath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "destinationPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.assets.list",
+      "description": "List Unity project assets with paths, GUIDs, and main asset types.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder": {
+            "type": "string",
+            "default": "Assets"
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 200
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.audit.report",
+      "description": "Generate hashed JSON and Markdown audit reports from persisted events and project-relative before/after evidence.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "default": "Unity AI verification report"
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "requestIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "maxItems": 200,
+            "default": []
+          },
+          "correlationIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "maxItems": 200,
+            "default": []
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "maxItems": 200,
+            "default": []
+          },
+          "sinceUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "untilUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maxEvents": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 200
+          },
+          "maxEvidenceBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10737418240,
+            "default": 2147483648
+          },
+          "requireBeforeAfter": {
+            "type": "boolean",
+            "default": false
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "phase": {
+                  "type": "string",
+                  "enum": [
+                    "before",
+                    "after",
+                    "supporting"
+                  ],
+                  "default": "supporting"
+                },
+                "kind": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "default": "artifact"
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 1000
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 100,
+            "default": []
+          },
+          "verifications": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "signal": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "passed",
+                    "failed",
+                    "inconclusive"
+                  ]
+                },
+                "summary": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "evidencePaths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "maxItems": 100,
+                  "default": []
+                }
+              },
+              "required": [
+                "signal",
+                "status"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 200,
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.build.android",
+      "description": "Generate a validated Android APK or AAB for Quest as a persistent job.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "default": "quest"
+          },
+          "appBundle": {
+            "type": "boolean",
+            "default": false
+          },
+          "development": {
+            "type": "boolean",
+            "default": false
+          },
+          "allowDebugging": {
+            "type": "boolean",
+            "default": false
+          },
+          "connectProfiler": {
+            "type": "boolean",
+            "default": false
+          },
+          "cleanBuildCache": {
+            "type": "boolean",
+            "default": false
+          },
+          "scenes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "maxItems": 200,
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.build.validate_android_quest",
+      "description": "Validate Android/Quest build support, scenes, player settings, architectures, and XR packages.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.capabilities.list",
+      "description": "List the Unity AI Control Plane capabilities known by the MCP server.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.checkpoints.create",
+      "description": "Create a durable, hashed checkpoint of selected Unity project paths.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "maxItems": 500,
+            "default": []
+          },
+          "maxFiles": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000,
+            "default": 20000
+          },
+          "maxBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10737418240,
+            "default": 1073741824
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.checkpoints.delete",
+      "description": "Delete one durable checkpoint after explicit confirmation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "checkpointId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "checkpointId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.checkpoints.list",
+      "description": "List durable Unity project checkpoints and their manifests.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.checkpoints.restore",
+      "description": "Restore and hash-verify a durable checkpoint, optionally creating a pre-restore safety checkpoint.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "checkpointId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "createSafetyCheckpoint": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "checkpointId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.compilation.status",
+      "description": "Read Unity compilation/import state and current console error counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.compilation.wait",
+      "description": "Wait asynchronously for Unity compilation/import to settle and verify the console error count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "triggerRefresh": {
+            "type": "boolean",
+            "default": true
+          },
+          "timeoutSeconds": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 3600,
+            "default": 300
+          },
+          "maxErrorCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000,
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.console.apply_fix",
+      "description": "Apply a confirmed, checkpointed one-line replacement to a Unity C# script.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "targetFile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "targetLine": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expectedOriginalLine": {
+            "type": "string"
+          },
+          "replacementLine": {
+            "type": "string"
+          },
+          "expectedDiagnosticCategory": {
+            "type": "string"
+          },
+          "expectedMessageContains": {
+            "type": "string"
+          },
+          "planId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "targetFile",
+          "targetLine",
+          "expectedOriginalLine",
+          "replacementLine"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.console.diagnose",
+      "description": "Diagnose Unity Console compiler/runtime issues as structured, read-only guidance.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.console.plan_fix",
+      "description": "Generate conservative read-only fix plans from Unity Console diagnostics.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.console.read",
+      "description": "Read Unity Console summary and recent log entries through the local Unity Editor bridge.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.editor.create_empty_game_object",
+      "description": "Create an empty GameObject in the active Unity scene through a controlled Editor operation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "default": "Unity AI GameObject"
+          },
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.editor.undo_last_operation",
+      "description": "Undo the last Unity Editor operation through a controlled rollback operation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.gameplay.compose",
+      "description": "Turn existing scene objects into checkpointed proximity doors, pickups, and multi-target activators.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "templates": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "door"
+                    },
+                    "targetPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "interactorPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "interactorTag": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80,
+                      "default": "Player"
+                    },
+                    "activationDistance": {
+                      "type": "number",
+                      "minimum": 0.01,
+                      "maximum": 1000,
+                      "default": 2
+                    },
+                    "deactivationDistance": {
+                      "type": "number",
+                      "minimum": 0.01,
+                      "maximum": 1000,
+                      "default": 2.5
+                    },
+                    "openOffset": {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        },
+                        "z": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y",
+                        "z"
+                      ],
+                      "additionalProperties": false,
+                      "default": {
+                        "x": 0,
+                        "y": 2.5,
+                        "z": 0
+                      }
+                    },
+                    "speed": {
+                      "type": "number",
+                      "minimum": 0.01,
+                      "maximum": 1000,
+                      "default": 3
+                    },
+                    "startsOpen": {
+                      "type": "boolean",
+                      "default": false
+                    },
+                    "closeWhenOutOfRange": {
+                      "type": "boolean",
+                      "default": true
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "targetPath"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "pickup"
+                    },
+                    "targetPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "interactorPath": {
+                      "$ref": "#/properties/templates/items/anyOf/0/properties/interactorPath"
+                    },
+                    "interactorTag": {
+                      "$ref": "#/properties/templates/items/anyOf/0/properties/interactorTag"
+                    },
+                    "activationDistance": {
+                      "$ref": "#/properties/templates/items/anyOf/0/properties/activationDistance"
+                    },
+                    "pickupId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "default": "pickup"
+                    },
+                    "value": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000000,
+                      "default": 1
+                    },
+                    "collectAction": {
+                      "type": "string",
+                      "enum": [
+                        "deactivate",
+                        "destroy"
+                      ],
+                      "default": "deactivate"
+                    },
+                    "spinAxis": {
+                      "$ref": "#/properties/templates/items/anyOf/0/properties/openOffset",
+                      "default": {
+                        "x": 0,
+                        "y": 1,
+                        "z": 0
+                      }
+                    },
+                    "spinDegreesPerSecond": {
+                      "type": "number",
+                      "minimum": -10000,
+                      "maximum": 10000,
+                      "default": 90
+                    },
+                    "bobAmplitude": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1000,
+                      "default": 0.15
+                    },
+                    "bobFrequency": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1000,
+                      "default": 1
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "targetPath"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "activator"
+                    },
+                    "targetPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "interactorPath": {
+                      "$ref": "#/properties/templates/items/anyOf/0/properties/interactorPath"
+                    },
+                    "interactorTag": {
+                      "$ref": "#/properties/templates/items/anyOf/0/properties/interactorTag"
+                    },
+                    "activationDistance": {
+                      "$ref": "#/properties/templates/items/anyOf/0/properties/activationDistance"
+                    },
+                    "affectedPaths": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512
+                      },
+                      "minItems": 1,
+                      "maxItems": 32
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "activate",
+                        "deactivate",
+                        "toggle"
+                      ],
+                      "default": "activate"
+                    },
+                    "oneShot": {
+                      "type": "boolean",
+                      "default": true
+                    },
+                    "revertOnExit": {
+                      "type": "boolean",
+                      "default": false
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "targetPath",
+                    "affectedPaths"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 20
+          }
+        },
+        "required": [
+          "templates"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.jobs.cancel",
+      "description": "Request cancellation of a queued or running Unity operation job.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{32}$"
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.jobs.get",
+      "description": "Get one persistent Unity operation job and its result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{32}$"
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.jobs.list",
+      "description": "List persistent Unity operation jobs, optionally filtered by status or kind.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.meta_xr.configure",
+      "description": "Install and configure Unity OpenXR/Meta OpenXR for Quest, including Android target, IL2CPP, ARM64, loader, and features.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "installPackages": {
+            "type": "boolean",
+            "default": true
+          },
+          "switchToAndroid": {
+            "type": "boolean",
+            "default": true
+          },
+          "installMetaOpenXr": {
+            "type": "boolean",
+            "default": true
+          },
+          "androidMinSdk": {
+            "type": "integer",
+            "minimum": 29,
+            "maximum": 99,
+            "default": 29
+          },
+          "applicationIdentifier": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 256
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.meta_xr.validate_setup",
+      "description": "Run initial Meta XR readiness validation through the local Unity Editor bridge.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.packages.change",
+      "description": "Add or remove registry Unity packages as a durable asynchronous job.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "add": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^com\\.[A-Za-z0-9._-]+(?:@[A-Za-z0-9._-]+)?$"
+            },
+            "maxItems": 50,
+            "default": []
+          },
+          "remove": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^com\\.[A-Za-z0-9._-]+$"
+            },
+            "maxItems": 50,
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.packages.list",
+      "description": "List registered Unity packages for the current project.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.playmode.control",
+      "description": "Enter, exit, pause, resume, or step Unity Play Mode as a persistent job.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "enter",
+              "exit",
+              "pause",
+              "resume",
+              "step"
+            ]
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.playmode.status",
+      "description": "Read the current Unity Play Mode and pause state.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.prefab.inspect",
+      "description": "Inspect a prefab asset hierarchy and components at a high level.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "includeComponents": {
+            "type": "boolean",
+            "default": true
+          },
+          "maxDepth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10,
+            "default": 3
+          },
+          "maxGameObjects": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 200
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.prefab.manage",
+      "description": "Save prefab assets, create variants, edit prefab contents, and apply or revert instance overrides with checkpoints.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "save_scene_object",
+              "create_variant",
+              "edit_asset",
+              "apply_overrides",
+              "revert_overrides"
+            ]
+          },
+          "prefabPath": {
+            "type": "string",
+            "maxLength": 512,
+            "default": ""
+          },
+          "targetPath": {
+            "type": "string",
+            "maxLength": 512,
+            "default": ""
+          },
+          "sceneObjectPath": {
+            "type": "string",
+            "maxLength": 512,
+            "default": ""
+          },
+          "connectToScene": {
+            "type": "boolean",
+            "default": false
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "create_child",
+                    "delete",
+                    "rename",
+                    "set_active",
+                    "add_component",
+                    "remove_component",
+                    "set_property"
+                  ]
+                },
+                "objectPath": {
+                  "type": "string",
+                  "maxLength": 512,
+                  "default": ""
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "active": {
+                  "type": "boolean"
+                },
+                "componentType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "componentIndex": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 0
+                },
+                "propertyPath": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "bool"
+                        },
+                        "boolValue": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "boolValue"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "integer"
+                        },
+                        "integerValue": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "integerValue"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "number"
+                        },
+                        "numberValue": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "numberValue"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "string"
+                        },
+                        "stringValue": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "stringValue"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "color"
+                        },
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        },
+                        "z": {
+                          "type": "number"
+                        },
+                        "w": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "x",
+                        "y",
+                        "z",
+                        "w"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "vector2"
+                        },
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "x",
+                        "y"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "vector3"
+                        },
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        },
+                        "z": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "x",
+                        "y",
+                        "z"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "vector4"
+                        },
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        },
+                        "z": {
+                          "type": "number"
+                        },
+                        "w": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "x",
+                        "y",
+                        "z",
+                        "w"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "vector2_int"
+                        },
+                        "x": {
+                          "type": "integer"
+                        },
+                        "y": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "x",
+                        "y"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "vector3_int"
+                        },
+                        "x": {
+                          "type": "integer"
+                        },
+                        "y": {
+                          "type": "integer"
+                        },
+                        "z": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "x",
+                        "y",
+                        "z"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "rect"
+                        },
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        },
+                        "z": {
+                          "type": "number"
+                        },
+                        "w": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "x",
+                        "y",
+                        "z",
+                        "w"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "rect_int"
+                        },
+                        "x": {
+                          "type": "integer"
+                        },
+                        "y": {
+                          "type": "integer"
+                        },
+                        "z": {
+                          "type": "integer"
+                        },
+                        "w": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "x",
+                        "y",
+                        "z",
+                        "w"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "bounds"
+                        },
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        },
+                        "z": {
+                          "type": "number"
+                        },
+                        "x2": {
+                          "type": "number"
+                        },
+                        "y2": {
+                          "type": "number"
+                        },
+                        "z2": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "x",
+                        "y",
+                        "z",
+                        "x2",
+                        "y2",
+                        "z2"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "bounds_int"
+                        },
+                        "x": {
+                          "type": "integer"
+                        },
+                        "y": {
+                          "type": "integer"
+                        },
+                        "z": {
+                          "type": "integer"
+                        },
+                        "x2": {
+                          "type": "integer"
+                        },
+                        "y2": {
+                          "type": "integer"
+                        },
+                        "z2": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "x",
+                        "y",
+                        "z",
+                        "x2",
+                        "y2",
+                        "z2"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "quaternion"
+                        },
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        },
+                        "z": {
+                          "type": "number"
+                        },
+                        "w": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "x",
+                        "y",
+                        "z",
+                        "w"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "enum"
+                        },
+                        "enumName": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enumName"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "enum"
+                        },
+                        "enumIndex": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "enumIndex"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "object_reference"
+                        },
+                        "assetPath": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "assetPath"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "null"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "array_size"
+                        },
+                        "integerValue": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 100000
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "integerValue"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "character"
+                        },
+                        "integerValue": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 65535
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "integerValue"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 50,
+            "default": []
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.prefabs.list",
+      "description": "List prefabs in the Unity project with paths, GUIDs, and root component summaries.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder": {
+            "type": "string",
+            "default": "Assets"
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 200
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.project.inspect",
+      "description": "Inspect the active Unity project through the local Unity Editor bridge.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.project.settings.inspect",
+      "description": "Inspect high-level Unity project and player settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.project.settings.update",
+      "description": "Update selected Project Settings, Android Player Settings, and Build Settings with a durable checkpoint.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "companyName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "productName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "applicationIdentifier": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 256
+          },
+          "colorSpace": {
+            "type": "string",
+            "enum": [
+              "Gamma",
+              "Linear"
+            ]
+          },
+          "scriptingBackend": {
+            "type": "string",
+            "enum": [
+              "Mono2x",
+              "IL2CPP",
+              "WinRTDotNET"
+            ]
+          },
+          "androidMinSdk": {
+            "type": "integer",
+            "minimum": 21,
+            "maximum": 99
+          },
+          "androidTargetSdk": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 99
+          },
+          "androidArchitectures": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ARMv7",
+                "ARM64",
+                "X86"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 3
+          },
+          "buildAppBundle": {
+            "type": "boolean"
+          },
+          "developmentBuild": {
+            "type": "boolean"
+          },
+          "connectProfiler": {
+            "type": "boolean"
+          },
+          "scenes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "enabled": {
+                  "type": "boolean",
+                  "default": true
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 200
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.project.snapshot",
+      "description": "Capture a compact, sanitized, read-only Unity project context snapshot for planning next actions.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.scene.batch",
+      "description": "Apply an atomic, undo-backed batch of hierarchy, prefab, component, and serialized-property scene operations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "create"
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "parentPath": {
+                      "type": "string",
+                      "maxLength": 512
+                    },
+                    "primitive": {
+                      "type": "string",
+                      "enum": [
+                        "empty",
+                        "cube",
+                        "sphere",
+                        "capsule",
+                        "cylinder",
+                        "plane",
+                        "quad"
+                      ],
+                      "default": "empty"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "instantiate_prefab"
+                    },
+                    "prefabPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "parentPath": {
+                      "type": "string",
+                      "maxLength": 512
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "prefabPath"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "delete"
+                    },
+                    "targetPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "targetPath"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "duplicate"
+                    },
+                    "targetPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "parentPath": {
+                      "type": "string",
+                      "maxLength": 512
+                    },
+                    "worldPositionStays": {
+                      "type": "boolean",
+                      "default": true
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "targetPath"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "rename"
+                    },
+                    "targetPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "targetPath",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "reparent"
+                    },
+                    "targetPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "parentPath": {
+                      "type": "string",
+                      "maxLength": 512,
+                      "default": ""
+                    },
+                    "worldPositionStays": {
+                      "type": "boolean",
+                      "default": true
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "targetPath"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "set_active"
+                    },
+                    "targetPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "active": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "targetPath",
+                    "active"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "add_component"
+                    },
+                    "targetPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "componentType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "targetPath",
+                    "componentType"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "remove_component"
+                    },
+                    "targetPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "componentType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "componentIndex": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "default": 0
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "targetPath",
+                    "componentType"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "set_property"
+                    },
+                    "targetPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "componentType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "componentIndex": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "default": 0
+                    },
+                    "propertyPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "value": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "bool"
+                            },
+                            "boolValue": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "boolValue"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "integer"
+                            },
+                            "integerValue": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "integerValue"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "number"
+                            },
+                            "numberValue": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "numberValue"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "string"
+                            },
+                            "stringValue": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "stringValue"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "color"
+                            },
+                            "x": {
+                              "type": "number"
+                            },
+                            "y": {
+                              "type": "number"
+                            },
+                            "z": {
+                              "type": "number"
+                            },
+                            "w": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "x",
+                            "y",
+                            "z",
+                            "w"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "vector2"
+                            },
+                            "x": {
+                              "type": "number"
+                            },
+                            "y": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "x",
+                            "y"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "vector3"
+                            },
+                            "x": {
+                              "type": "number"
+                            },
+                            "y": {
+                              "type": "number"
+                            },
+                            "z": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "x",
+                            "y",
+                            "z"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "vector4"
+                            },
+                            "x": {
+                              "type": "number"
+                            },
+                            "y": {
+                              "type": "number"
+                            },
+                            "z": {
+                              "type": "number"
+                            },
+                            "w": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "x",
+                            "y",
+                            "z",
+                            "w"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "vector2_int"
+                            },
+                            "x": {
+                              "type": "integer"
+                            },
+                            "y": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "x",
+                            "y"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "vector3_int"
+                            },
+                            "x": {
+                              "type": "integer"
+                            },
+                            "y": {
+                              "type": "integer"
+                            },
+                            "z": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "x",
+                            "y",
+                            "z"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "rect"
+                            },
+                            "x": {
+                              "type": "number"
+                            },
+                            "y": {
+                              "type": "number"
+                            },
+                            "z": {
+                              "type": "number"
+                            },
+                            "w": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "x",
+                            "y",
+                            "z",
+                            "w"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "rect_int"
+                            },
+                            "x": {
+                              "type": "integer"
+                            },
+                            "y": {
+                              "type": "integer"
+                            },
+                            "z": {
+                              "type": "integer"
+                            },
+                            "w": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "x",
+                            "y",
+                            "z",
+                            "w"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "bounds"
+                            },
+                            "x": {
+                              "type": "number"
+                            },
+                            "y": {
+                              "type": "number"
+                            },
+                            "z": {
+                              "type": "number"
+                            },
+                            "x2": {
+                              "type": "number"
+                            },
+                            "y2": {
+                              "type": "number"
+                            },
+                            "z2": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "x",
+                            "y",
+                            "z",
+                            "x2",
+                            "y2",
+                            "z2"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "bounds_int"
+                            },
+                            "x": {
+                              "type": "integer"
+                            },
+                            "y": {
+                              "type": "integer"
+                            },
+                            "z": {
+                              "type": "integer"
+                            },
+                            "x2": {
+                              "type": "integer"
+                            },
+                            "y2": {
+                              "type": "integer"
+                            },
+                            "z2": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "x",
+                            "y",
+                            "z",
+                            "x2",
+                            "y2",
+                            "z2"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "quaternion"
+                            },
+                            "x": {
+                              "type": "number"
+                            },
+                            "y": {
+                              "type": "number"
+                            },
+                            "z": {
+                              "type": "number"
+                            },
+                            "w": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "x",
+                            "y",
+                            "z",
+                            "w"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "enum"
+                            },
+                            "enumName": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "enumName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "enum"
+                            },
+                            "enumIndex": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "enumIndex"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "object_reference"
+                            },
+                            "assetPath": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "assetPath"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "null"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "array_size"
+                            },
+                            "integerValue": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100000
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "integerValue"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "character"
+                            },
+                            "integerValue": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 65535
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "integerValue"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "targetPath",
+                    "componentType",
+                    "propertyPath",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "operations"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.scene.inspect",
+      "description": "Inspect the active Unity scene hierarchy at a high level.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "includeComponents": {
+            "type": "boolean",
+            "default": true
+          },
+          "maxDepth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10,
+            "default": 3
+          },
+          "maxGameObjects": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 200
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.scene.inspect_game_object",
+      "description": "Inspect one GameObject, its components, and bounded visible serialized properties.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "includeProperties": {
+            "type": "boolean",
+            "default": true
+          },
+          "maxProperties": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "default": 500
+          },
+          "maxPropertyDepth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "default": 8
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.scene.upsert_game_object",
+      "description": "Create or update a GameObject in the active Unity scene from a safe, schema-bound spec.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "primitive": {
+            "type": "string",
+            "enum": [
+              "empty",
+              "cube",
+              "sphere",
+              "capsule",
+              "cylinder",
+              "plane",
+              "quad"
+            ],
+            "default": "empty"
+          },
+          "transform": {
+            "type": "object",
+            "properties": {
+              "position": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  },
+                  "z": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "z"
+                ],
+                "additionalProperties": false
+              },
+              "rotationEuler": {
+                "$ref": "#/properties/transform/properties/position"
+              },
+              "scale": {
+                "$ref": "#/properties/transform/properties/position"
+              }
+            },
+            "additionalProperties": false
+          },
+          "tag": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "layer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 31
+              }
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "upsert"
+            ],
+            "default": "upsert"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.scenes.list",
+      "description": "List Unity scenes in the project and Build Settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.scripts.author",
+      "description": "Validate and hash-confirm a runtime MonoBehaviour, then write, compile, optionally attach, verify, and roll back on failure.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 262144
+          },
+          "expectedSourceSha256": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          },
+          "expectedClassName": {
+            "type": "string",
+            "pattern": "^[_\\p{L}][_\\p{L}\\p{N}]*$",
+            "maxLength": 128
+          },
+          "expectedNamespace": {
+            "type": "string",
+            "pattern": "^[_\\p{L}][_\\p{L}\\p{N}]*(?:\\.[_\\p{L}][_\\p{L}\\p{N}]*)*$",
+            "maxLength": 256
+          },
+          "overwrite": {
+            "type": "boolean",
+            "default": false
+          },
+          "attachToObjectPath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "autoRollbackOnCompileError": {
+            "type": "boolean",
+            "default": true
+          },
+          "timeoutSeconds": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 1800,
+            "default": 300
+          }
+        },
+        "required": [
+          "path",
+          "source",
+          "expectedClassName"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.scripts.list",
+      "description": "List C# scripts visible to Unity with paths, class names, and namespaces when available.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "includePackages": {
+            "type": "boolean",
+            "default": true
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "default": 500
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.tests.run",
+      "description": "Run Unity Edit Mode or Play Mode tests and persist an XML result artifact.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "edit",
+              "play"
+            ],
+            "default": "edit"
+          },
+          "testNames": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "maxItems": 200,
+            "default": []
+          },
+          "groupNames": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "maxItems": 200,
+            "default": []
+          },
+          "categoryNames": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "maxItems": 100,
+            "default": []
+          },
+          "assemblyNames": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "maxItems": 100,
+            "default": []
+          },
+          "runSynchronously": {
+            "type": "boolean",
+            "default": false
+          },
+          "saveModifiedScenes": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.vision.capture",
+      "description": "Synchronously capture a Scene View or Game View screenshot and return only after the PNG is verified ready.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "scene",
+              "game"
+            ],
+            "default": "scene"
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4096,
+            "default": 640
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4096,
+            "default": 360
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "cameraPath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.vision.compare",
+      "description": "Compare ready before/after screenshot artifacts, generate a diff image, and detect visual regressions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "beforePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "afterPath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "pixelThreshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0.1
+          },
+          "maxChangedPixelRatio": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0.01
+          },
+          "maxMeanAbsoluteError": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0.02
+          },
+          "ignoreAlpha": {
+            "type": "boolean",
+            "default": true
+          },
+          "generateDiff": {
+            "type": "boolean",
+            "default": true
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          }
+        },
+        "required": [
+          "beforePath",
+          "afterPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    }
+  ]
+}
