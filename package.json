@@ -32,6 +32,7 @@
     "schemas:generate": "npm run build && node scripts/sync-mcp-tool-schemas.mjs --write-repo",
     "setup:user": "node scripts/setup-user.mjs",
     "typecheck": "tsc -b",
+    "verify:asset-catalog": "npm run build && node scripts/verify-asset-catalog.mjs",
     "verify:bridge-retry": "npm run build && node scripts/verify-bridge-retry.mjs",
     "verify:unity-package": "node scripts/verify-unity-package.mjs",
     "verify:mcp-unity-e2e": "npm run build && node scripts/verify-mcp-unity-e2e.mjs"

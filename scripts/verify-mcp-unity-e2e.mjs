@@ -172,6 +172,7 @@ public static class UnityAiE2EConsoleDiagnosticsFixture
 
 const assetFixtureServer = await startAssetFixtureServer(remoteObjSource);
 const remoteModelUrl = `http://127.0.0.1:${assetFixtureServer.port}/remote-triangle.obj`;
+const catalogManifestUrl = `http://127.0.0.1:${assetFixtureServer.port}/catalog.json`;
 const unity = spawn(unityPath, [
   "-batchmode",
   "-nographics",
@@ -202,7 +203,9 @@ try {
     env: {
       ...process.env,
       UNITY_AI_BRIDGE_URL: bridgeUrl,
-      UNITY_AI_BRIDGE_TOKEN: bridgeToken
+      UNITY_AI_BRIDGE_TOKEN: bridgeToken,
+      UNITY_AI_ASSET_CATALOG_URLS: catalogManifestUrl,
+      UNITY_AI_CATALOG_ALLOW_INSECURE_LOCALHOST: "1"
     }
   });
 
@@ -539,6 +542,13 @@ function assertCapabilities(capabilities) {
     if (!assetImportCapability.verification.includes(signal)) {
       fail(`unity.assets.import must declare ${signal}.`);
     }
+  }
+
+  const assetCatalogSearchCapability = capabilities.find((capability) => capability.name === "unity.assets.catalog.search");
+  const assetCatalogImportCapability = capabilities.find((capability) => capability.name === "unity.assets.import_from_catalog");
+  if (!assetCatalogSearchCapability?.verification.includes("asset_license_verified")
+      || !assetCatalogImportCapability?.verification.includes("asset_hash_verified")) {
+    fail("catalog capabilities must declare license and hash verification.");
   }
 
   const scriptAuthoringCapability = capabilities.find((capability) => capability.name === "unity.scripts.author");
@@ -1597,6 +1607,7 @@ async function assertExtendedControlPlaneFlow(client) {
 
   const authoredAssets = await assertAssetAuthoringFlow(client);
   await assertAssetImportFlow(client, authoredAssets);
+  await assertAssetCatalogFlow(client);
   await assertScriptAuthoringFlow(client);
   await assertGameplayComposeFlow(client);
   await assertDurableCheckpointFlow(client);
@@ -1828,6 +1839,74 @@ async function assertAssetImportFlow(client, authoredAssets) {
   const speedProperty = rotation.properties?.find((property) => property.path === "degreesPerSecond");
   if (controllerProperty?.objectReferencePath !== authoredAssets.controllerPath || Math.abs(Number(speedProperty?.value) - 90) > 0.001) {
     fail(`imported model functionality was not serialized correctly: ${JSON.stringify({ controllerProperty, speedProperty })}.`);
+  }
+}
+
+async function assertAssetCatalogFlow(client) {
+  const search = await callJsonTool(client, "unity.assets.catalog.search", {
+    query: "remote triangle",
+    kind: "model",
+    maxResults: 20,
+    refresh: true
+  });
+  const catalogAsset = search.assets?.find((asset) => asset.assetId === "unity-ai-e2e:remote-triangle");
+  const expectedHash = createHash("sha256").update(remoteObjSource).digest("hex");
+  if (!catalogAsset
+      || catalogAsset.license?.spdxId !== "CC0-1.0"
+      || catalogAsset.sha256 !== expectedHash
+      || catalogAsset.format !== "obj") {
+    fail(`catalog search did not return verified fixture metadata: ${JSON.stringify(search)}.`);
+  }
+
+  const destinationPath = "Assets/UnityAiGenerated/ImportedCatalogTriangle.obj";
+  const preview = await callJsonTool(client, "unity.assets.import_from_catalog", {
+    catalogAssetId: catalogAsset.assetId,
+    expectedCatalogSha256: expectedHash,
+    destinationPath,
+    model: {
+      globalScale: 1,
+      importAnimation: false,
+      animationType: "none"
+    }
+  });
+  if (preview.dryRun !== true
+      || preview.catalogProvenance?.catalogAssetId !== catalogAsset.assetId
+      || preview.catalogAsset?.sha256 !== expectedHash) {
+    fail(`catalog import preview was invalid: ${JSON.stringify(preview)}.`);
+  }
+
+  const imported = await callJsonTool(client, "unity.assets.import_from_catalog", {
+    dryRun: false,
+    confirm: true,
+    catalogAssetId: catalogAsset.assetId,
+    expectedCatalogSha256: expectedHash,
+    destinationPath,
+    model: {
+      globalScale: 1,
+      importAnimation: false,
+      animationType: "none"
+    }
+  });
+  assertImportedAsset("catalog model import", imported, {
+    sourceKind: "url",
+    destinationPath,
+    assetType: "UnityEngine.GameObject",
+    importerType: "UnityEditor.ModelImporter",
+    instantiated: false,
+    prefabCreated: false,
+    auditCapability: "unity.assets.import_from_catalog"
+  });
+
+  for (const signal of ["asset_license_verified", "asset_hash_verified"]) {
+    if (!imported.verificationSignals?.includes(signal)) {
+      fail(`catalog model import did not include verification signal ${signal}.`);
+    }
+  }
+
+  if (imported.catalogProvenance?.licenseSpdxId !== "CC0-1.0"
+      || imported.catalogProvenance?.catalogAssetId !== catalogAsset.assetId
+      || imported.catalogAsset?.sourceUrl !== "https://example.com/unity-ai-e2e/remote-triangle") {
+    fail(`catalog model import did not retain provenance: ${JSON.stringify(imported)}.`);
   }
 }
 
@@ -2101,7 +2180,7 @@ function assertImportedAsset(label, result, expected) {
     fail(`${label} did not verify prefab creation.`);
   }
 
-  if (result.auditPersisted !== true || result.auditEvent?.capability !== "unity.assets.import") {
+  if (result.auditPersisted !== true || result.auditEvent?.capability !== (expected.auditCapability ?? "unity.assets.import")) {
     fail(`${label} did not persist its audit event.`);
   }
   assertAuditLogContains(label, join(tempProject, result.auditLogPath), result.auditEvent);
@@ -3073,6 +3152,49 @@ function sha256File(path) {
 function startAssetFixtureServer(body) {
   return new Promise((resolvePromise, rejectPromise) => {
     const server = createServer((request, response) => {
+      if (request.url === "/catalog.json") {
+        const address = server.address();
+        if (!address || typeof address === "string") {
+          response.writeHead(500);
+          response.end("missing address");
+          return;
+        }
+
+        const manifest = JSON.stringify({
+          schemaVersion: 1,
+          catalog: {
+            id: "unity-ai-e2e",
+            name: "Unity AI E2E Catalog",
+            homepage: "https://example.com/unity-ai-e2e"
+          },
+          assets: [
+            {
+              id: "remote-triangle",
+              name: "Remote Triangle",
+              description: "Deterministic remote OBJ fixture",
+              kind: "model",
+              format: "obj",
+              tags: ["fixture", "triangle"],
+              downloadUrl: `http://127.0.0.1:${address.port}/remote-triangle.obj`,
+              sourceUrl: "https://example.com/unity-ai-e2e/remote-triangle",
+              sha256: createHash("sha256").update(body).digest("hex"),
+              sizeBytes: Buffer.byteLength(body),
+              license: {
+                spdxId: "CC0-1.0",
+                name: "CC0 1.0 Universal",
+                url: "https://creativecommons.org/publicdomain/zero/1.0/"
+              }
+            }
+          ]
+        });
+        response.writeHead(200, {
+          "content-type": "application/json",
+          "content-length": Buffer.byteLength(manifest)
+        });
+        response.end(manifest);
+        return;
+      }
+
       if (request.url !== "/remote-triangle.obj") {
         response.writeHead(404);
         response.end("not found");
@@ -3228,6 +3350,26 @@ async function assertMutatingRouteRequiresToken(url) {
   }
 
   console.log("✓ unity.assets.import rejects missing token");
+
+  const catalogImportResponse = await fetch(`${url}/capabilities/${encodeURIComponent("unity.assets.import_from_catalog")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      input: {
+        dryRun: false,
+        confirm: true,
+        sourceKind: "url",
+        url: remoteModelUrl,
+        destinationPath: "Assets/UnauthorizedCatalog.obj"
+      }
+    })
+  });
+
+  if (catalogImportResponse.status !== 403) {
+    fail(`Expected unity.assets.import_from_catalog without token to return 403, got HTTP ${catalogImportResponse.status}.`);
+  }
+
+  console.log("✓ unity.assets.import_from_catalog rejects missing token");
 
   const scriptAuthoringResponse = await fetch(`${url}/capabilities/${encodeURIComponent("unity.scripts.author")}`, {
     method: "POST",
