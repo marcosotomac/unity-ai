@@ -8,7 +8,13 @@ import { UnityBridgeClient } from "./unity-bridge-client.js";
 const bridge = new UnityBridgeClient({
   baseUrl: process.env.UNITY_AI_BRIDGE_URL ?? "http://127.0.0.1:39071",
   timeoutMs: parseTimeout(process.env.UNITY_AI_BRIDGE_TIMEOUT_MS),
-  token: process.env.UNITY_AI_BRIDGE_TOKEN
+  token: process.env.UNITY_AI_BRIDGE_TOKEN,
+  retry: {
+    maxAttempts: parsePositiveInteger(process.env.UNITY_AI_BRIDGE_RETRY_MAX_ATTEMPTS, 12),
+    maxElapsedMs: parsePositiveInteger(process.env.UNITY_AI_BRIDGE_RETRY_TIMEOUT_MS, 90_000),
+    baseDelayMs: parsePositiveInteger(process.env.UNITY_AI_BRIDGE_RETRY_BASE_DELAY_MS, 150),
+    maxDelayMs: parsePositiveInteger(process.env.UNITY_AI_BRIDGE_RETRY_MAX_DELAY_MS, 3_000)
+  }
 });
 
 const server = new McpServer({
@@ -996,8 +1002,12 @@ async function bridgeTool(capability: string, input: unknown = {}) {
 }
 
 function parseTimeout(value: string | undefined): number {
-  const parsed = Number(value ?? 10_000);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 10_000;
+  return parsePositiveInteger(value, 10_000);
+}
+
+function parsePositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number(value ?? fallback);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
 async function main(): Promise<void> {
