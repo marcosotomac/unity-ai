@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEditor.Compilation;
 
@@ -76,15 +77,10 @@ namespace UnityAI.ControlPlane.Editor
             var maxResults = input.maxResults <= 0 ? 500 : Math.Min(input.maxResults, 2000);
             var folders = input.includePackages ? new[] { "Assets", "Packages" } : new[] { "Assets" };
             var guids = AssetDatabase.FindAssets("t:MonoScript", folders);
-            var scripts = new List<ScriptListItem>();
+            var scripts = new List<ScriptListItem>(guids.Length);
 
             foreach (var guid in guids)
             {
-                if (scripts.Count >= maxResults)
-                {
-                    break;
-                }
-
                 var path = AssetDatabase.GUIDToAssetPath(guid);
                 var script = AssetDatabase.LoadAssetAtPath<MonoScript>(path);
                 var scriptClass = script != null ? script.GetClass() : null;
@@ -98,13 +94,18 @@ namespace UnityAI.ControlPlane.Editor
                 });
             }
 
+            var returnedScripts = scripts
+                .OrderBy(script => script.path, StringComparer.Ordinal)
+                .Take(maxResults)
+                .ToArray();
+
             return new ScriptListReport
             {
                 totalFound = guids.Length,
-                returned = scripts.Count,
+                returned = returnedScripts.Length,
                 includePackages = input.includePackages,
-                truncated = guids.Length > scripts.Count,
-                scripts = scripts.ToArray(),
+                truncated = guids.Length > returnedScripts.Length,
+                scripts = returnedScripts,
                 capturedAtUtc = DateTime.UtcNow.ToString("O")
             };
         }

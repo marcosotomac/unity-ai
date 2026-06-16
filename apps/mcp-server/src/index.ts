@@ -2,13 +2,25 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
+import { AssetCatalogService, parseAllowedLicenses, parseCatalogList, toPublicCatalogAsset } from "./asset-catalog.js";
 import { initialCapabilities } from "./capabilities.js";
 import { UnityBridgeClient } from "./unity-bridge-client.js";
 
 const bridge = new UnityBridgeClient({
   baseUrl: process.env.UNITY_AI_BRIDGE_URL ?? "http://127.0.0.1:39071",
   timeoutMs: parseTimeout(process.env.UNITY_AI_BRIDGE_TIMEOUT_MS),
-  token: process.env.UNITY_AI_BRIDGE_TOKEN
+  token: process.env.UNITY_AI_BRIDGE_TOKEN,
+  retry: {
+    maxAttempts: parsePositiveInteger(process.env.UNITY_AI_BRIDGE_RETRY_MAX_ATTEMPTS, 12),
+    maxElapsedMs: parsePositiveInteger(process.env.UNITY_AI_BRIDGE_RETRY_TIMEOUT_MS, 90_000),
+    baseDelayMs: parsePositiveInteger(process.env.UNITY_AI_BRIDGE_RETRY_BASE_DELAY_MS, 150),
+    maxDelayMs: parsePositiveInteger(process.env.UNITY_AI_BRIDGE_RETRY_MAX_DELAY_MS, 3_000)
+  }
+});
+const assetCatalog = new AssetCatalogService({
+  manifestUrls: parseCatalogList(process.env.UNITY_AI_ASSET_CATALOG_URLS),
+  allowedLicenses: parseAllowedLicenses(process.env.UNITY_AI_ASSET_CATALOG_ALLOWED_LICENSES),
+  allowInsecureLocalhost: process.env.UNITY_AI_CATALOG_ALLOW_INSECURE_LOCALHOST === "1"
 });
 
 const server = new McpServer({
@@ -50,10 +62,46 @@ server.registerTool(
   async () => bridgeTool("unity.project.snapshot")
 );
 
+const auditEvidenceSchema = z.object({
+  phase: z.enum(["before", "after", "supporting"]).default("supporting"),
+  kind: z.string().min(1).max(64).default("artifact"),
+  path: z.string().min(1).max(512),
+  description: z.string().max(1000).optional()
+}).strict();
+
+const auditVerificationSchema = z.object({
+  signal: z.string().min(1).max(128),
+  status: z.enum(["passed", "failed", "inconclusive"]),
+  summary: z.string().max(2000).optional(),
+  evidencePaths: z.array(z.string().min(1).max(512)).max(100).default([])
+}).strict();
+
+server.registerTool(
+  "unity.audit.report",
+  {
+    description: "Generate hashed JSON and Markdown audit reports from persisted events and project-relative before/after evidence.",
+    inputSchema: z.object({
+      title: z.string().min(1).max(160).default("Unity AI verification report"),
+      summary: z.string().max(4000).optional(),
+      requestIds: z.array(z.string().min(1).max(256)).max(200).default([]),
+      correlationIds: z.array(z.string().min(1).max(256)).max(200).default([]),
+      capabilities: z.array(z.string().min(1).max(256)).max(200).default([]),
+      sinceUtc: z.string().datetime({ offset: true }).optional(),
+      untilUtc: z.string().datetime({ offset: true }).optional(),
+      maxEvents: z.number().int().min(1).max(5000).default(200),
+      maxEvidenceBytes: z.number().int().min(1).max(10_737_418_240).default(2_147_483_648),
+      requireBeforeAfter: z.boolean().default(false),
+      evidence: z.array(auditEvidenceSchema).max(100).default([]),
+      verifications: z.array(auditVerificationSchema).max(200).default([])
+    }).strict()
+  },
+  async (input) => bridgeTool("unity.audit.report", input)
+);
+
 server.registerTool(
   "unity.console.read",
   {
-    description: "Read Unity Console summary and recent log entries through the local Unity Editor bridge.",
+    description: "Read Unity Console entries with strict compilation, runtime, bridge, and import classifications plus blocking status.",
     inputSchema: z.object({})
   },
   async () => bridgeTool("unity.console.read")
@@ -62,7 +110,7 @@ server.registerTool(
 server.registerTool(
   "unity.console.diagnose",
   {
-    description: "Diagnose Unity Console compiler/runtime issues as structured, read-only guidance.",
+    description: "Classify Unity Console entries into blocking CompilationError and non-blocking runtime, bridge, import, or warning diagnostics.",
     inputSchema: z.object({})
   },
   async () => bridgeTool("unity.console.diagnose")
@@ -120,14 +168,34 @@ server.registerTool(
 server.registerTool(
   "unity.scene.inspect",
   {
-    description: "Inspect the active Unity scene hierarchy at a high level.",
+    description: "Inspect a bounded, optionally filtered view of the active Unity scene hierarchy.",
     inputSchema: z.object({
       includeComponents: z.boolean().default(true),
       maxDepth: z.number().int().min(0).max(10).default(3),
-      maxGameObjects: z.number().int().min(1).max(1000).default(200)
-    })
+      maxGameObjects: z.number().int().min(1).max(1000).default(200),
+      filter: z.object({
+        nameContains: z.string().min(1).max(128).optional(),
+        pathPrefix: z.string().min(1).max(512).optional(),
+        componentType: z.string().min(1).max(256).optional(),
+        activeState: z.enum(["any", "active", "inactive"]).default("any"),
+        withinRadius: z.union([
+          z.object({
+            centerPath: z.string().min(1).max(512),
+            radius: z.number().finite().min(0).max(100000)
+          }).strict(),
+          z.object({
+            center: z.object({
+              x: z.number().finite(),
+              y: z.number().finite(),
+              z: z.number().finite()
+            }).strict(),
+            radius: z.number().finite().min(0).max(100000)
+          }).strict()
+        ]).optional()
+      }).strict().optional()
+    }).strict()
   },
-  async ({ includeComponents, maxDepth, maxGameObjects }) => bridgeTool("unity.scene.inspect", { includeComponents, maxDepth, maxGameObjects })
+  async (input) => bridgeTool("unity.scene.inspect", input)
 );
 
 server.registerTool(
@@ -144,11 +212,152 @@ server.registerTool(
   async (input) => bridgeTool("unity.scene.inspect_game_object", input)
 );
 
+server.registerTool(
+  "unity.physics.inspect",
+  {
+    description: "Inspect bounded 3D/2D physics state, collider alignment, penetrations, relative impact speeds, and sampled net-force estimates.",
+    inputSchema: z.object({
+      pathPrefix: z.string().min(1).max(512).optional(),
+      includeInactive: z.boolean().default(false),
+      dimension: z.enum(["all", "3d", "2d"]).default("all"),
+      withinRadius: z.union([
+        z.object({
+          centerPath: z.string().min(1).max(512),
+          radius: z.number().finite().min(0).max(100000)
+        }).strict(),
+        z.object({
+          center: z.object({
+            x: z.number().finite(),
+            y: z.number().finite(),
+            z: z.number().finite()
+          }).strict(),
+          radius: z.number().finite().min(0).max(100000)
+        }).strict()
+      ]).optional(),
+      includeOverlapDiagnostics: z.boolean().default(true),
+      maxObjects: z.number().int().min(1).max(500).default(200),
+      maxOverlaps: z.number().int().min(0).max(1000).default(200)
+    }).strict()
+  },
+  async (input) => bridgeTool("unity.physics.inspect", input)
+);
+
+server.registerTool(
+  "unity.runtime.telemetry",
+  {
+    description: "Capture compact per-object runtime telemetry for transforms, renderer/collider bounds, rigidbodies, velocities, and scene time.",
+    inputSchema: z.object({
+      pathPrefix: z.string().min(1).max(512).optional(),
+      includeInactive: z.boolean().default(false),
+      withinRadius: z.union([
+        z.object({
+          centerPath: z.string().min(1).max(512),
+          radius: z.number().finite().min(0).max(100000)
+        }).strict(),
+        z.object({
+          center: z.object({
+            x: z.number().finite(),
+            y: z.number().finite(),
+            z: z.number().finite()
+          }).strict(),
+          radius: z.number().finite().min(0).max(100000)
+        }).strict()
+      ]).optional(),
+      includeRenderers: z.boolean().default(true),
+      includeColliders: z.boolean().default(true),
+      includeRigidbodies: z.boolean().default(true),
+      maxObjects: z.number().int().min(1).max(500).default(200)
+    }).strict()
+  },
+  async (input) => bridgeTool("unity.runtime.telemetry", input)
+);
+
+server.registerTool(
+  "unity.ui.audit",
+  {
+    description: "Audit active-scene UI for Canvas, CanvasScaler, EventSystem/input modules, contrast, labels, button action markers, and layout quality.",
+    inputSchema: z.object({
+      pathPrefix: z.string().max(512).default(""),
+      includeInactive: z.boolean().default(true),
+      maxElements: z.number().int().min(1).max(1000).default(200),
+      maxFindings: z.number().int().min(1).max(1000).default(200),
+      minContrastRatio: z.number().finite().min(1).max(21).default(4.5)
+    }).strict()
+  },
+  async (input) => bridgeTool("unity.ui.audit", input)
+);
+
 const sceneVectorSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
   z: z.number().finite()
 }).strict();
+
+const uiThemeSchema = z.object({
+  background: z.string().min(4).max(16).default("#0F172AF2"),
+  panel: z.string().min(4).max(16).default("#111827E6"),
+  primary: z.string().min(4).max(16).default("#2563EBFF"),
+  secondary: z.string().min(4).max(16).default("#334155FF"),
+  accent: z.string().min(4).max(16).default("#F59E0BFF"),
+  text: z.string().min(4).max(16).default("#F8FAFCFF"),
+  mutedText: z.string().min(4).max(16).default("#CBD5E1FF"),
+  danger: z.string().min(4).max(16).default("#DC2626FF"),
+  baseFontSize: z.number().int().min(12).max(120).default(28),
+  titleFontSize: z.number().int().min(18).max(180).default(72),
+  buttonFontSize: z.number().int().min(12).max(120).default(30),
+  safeAreaMargin: z.number().finite().min(0).max(320).default(80)
+}).strict();
+
+const uiButtonSchema = z.object({
+  name: z.string().min(1).max(80).optional(),
+  text: z.string().min(1).max(120),
+  actionId: z.string().min(1).max(120).optional(),
+  intent: z.string().max(400).default(""),
+  variant: z.enum(["primary", "secondary", "accent", "danger"]).default("primary")
+}).strict();
+
+const uiStatSchema = z.object({
+  name: z.string().min(1).max(80).optional(),
+  label: z.string().min(1).max(80),
+  value: z.string().min(1).max(80)
+}).strict();
+
+const uiLabelSchema = z.object({
+  name: z.string().min(1).max(80).optional(),
+  text: z.string().min(1).max(400),
+  slot: z.enum(["body", "header", "footer", "aside"]).default("body"),
+  fontSize: z.number().int().min(0).max(120).default(0)
+}).strict();
+
+server.registerTool(
+  "unity.ui.compose",
+  {
+    description: "Create or replace a production-quality Canvas UI screen from templates with responsive layout, readable contrast, EventSystem, action markers, audit, and rollback on quality failure.",
+    inputSchema: z.object({
+      dryRun: z.boolean().default(true),
+      confirm: z.boolean().default(false),
+      mode: z.enum(["create", "upsert", "replace"]).default("upsert"),
+      template: z.enum(["main_menu", "pause_menu", "hud", "dialog", "blank"]).default("main_menu"),
+      canvasName: z.string().min(1).max(80).default("Unity AI UI Canvas"),
+      screenName: z.string().min(1).max(80).default("Unity AI Screen"),
+      screenId: z.string().min(1).max(120).default("unity-ai-screen"),
+      title: z.string().min(1).max(160).default("New Screen"),
+      subtitle: z.string().max(400).default(""),
+      body: z.string().max(400).default(""),
+      referenceWidth: z.number().int().min(320).max(8192).default(1920),
+      referenceHeight: z.number().int().min(240).max(8192).default(1080),
+      matchWidthOrHeight: z.number().finite().min(0).max(1).default(0.5),
+      ensureEventSystem: z.boolean().default(true),
+      createActionMarkers: z.boolean().default(true),
+      enforceReadableContrast: z.boolean().default(true),
+      theme: uiThemeSchema.default({}),
+      buttons: z.array(uiButtonSchema).max(12).default([]),
+      stats: z.array(uiStatSchema).max(12).default([]),
+      labels: z.array(uiLabelSchema).max(24).default([])
+    }).strict()
+  },
+  async (input) => bridgeTool("unity.ui.compose", input)
+);
 
 server.registerTool(
   "unity.scene.upsert_game_object",
@@ -174,7 +383,7 @@ server.registerTool(
   async (input) => bridgeTool("unity.scene.upsert_game_object", input)
 );
 
-const sceneSerializedValueSchema = z.union([
+const serializedValueSchema = z.union([
   z.object({ kind: z.literal("bool"), boolValue: z.boolean() }).strict(),
   z.object({ kind: z.literal("integer"), integerValue: z.number().int().safe() }).strict(),
   z.object({ kind: z.literal("number"), numberValue: z.number().finite() }).strict(),
@@ -212,6 +421,20 @@ const sceneSerializedValueSchema = z.union([
   z.object({ kind: z.literal("null") }).strict(),
   z.object({ kind: z.literal("array_size"), integerValue: z.number().int().min(0).max(100000) }).strict(),
   z.object({ kind: z.literal("character"), integerValue: z.number().int().min(0).max(65535) }).strict()
+]);
+
+const sceneSerializedValueSchema = z.union([
+  serializedValueSchema,
+  z.object({
+    kind: z.literal("game_object_reference"),
+    path: z.string().min(1).max(512)
+  }).strict(),
+  z.object({
+    kind: z.literal("component_reference"),
+    path: z.string().min(1).max(512),
+    componentType: z.string().min(1).max(256),
+    componentIndex: z.number().int().min(0).default(0)
+  }).strict()
 ]);
 
 const sceneBatchOperationSchema = z.discriminatedUnion("kind", [
@@ -275,7 +498,7 @@ const sceneBatchOperationSchema = z.discriminatedUnion("kind", [
 server.registerTool(
   "unity.scene.batch",
   {
-    description: "Apply an atomic, undo-backed batch of hierarchy, prefab, component, and serialized-property scene operations.",
+    description: "Apply an atomic, undo-backed batch of hierarchy, prefab, component, serialized-property, and cross-object reference operations.",
     inputSchema: z.object({
       dryRun: z.boolean().default(true),
       confirm: z.boolean().default(false),
@@ -283,6 +506,59 @@ server.registerTool(
     }).strict()
   },
   async (input) => bridgeTool("unity.scene.batch", input)
+);
+
+const gameplayInteractorSchema = {
+  interactorPath: z.string().min(1).max(512).optional(),
+  interactorTag: z.string().min(1).max(80).default("Player"),
+  activationDistance: z.number().finite().min(0.01).max(1000).default(2)
+};
+
+const gameplayTemplateSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("door"),
+    targetPath: z.string().min(1).max(512),
+    ...gameplayInteractorSchema,
+    deactivationDistance: z.number().finite().min(0.01).max(1000).default(2.5),
+    openOffset: sceneVectorSchema.default({ x: 0, y: 2.5, z: 0 }),
+    speed: z.number().finite().min(0.01).max(1000).default(3),
+    startsOpen: z.boolean().default(false),
+    closeWhenOutOfRange: z.boolean().default(true)
+  }).strict(),
+  z.object({
+    kind: z.literal("pickup"),
+    targetPath: z.string().min(1).max(512),
+    ...gameplayInteractorSchema,
+    pickupId: z.string().min(1).max(128).default("pickup"),
+    value: z.number().int().min(0).max(1_000_000).default(1),
+    collectAction: z.enum(["deactivate", "destroy"]).default("deactivate"),
+    spinAxis: sceneVectorSchema.default({ x: 0, y: 1, z: 0 }),
+    spinDegreesPerSecond: z.number().finite().min(-10_000).max(10_000).default(90),
+    bobAmplitude: z.number().finite().min(0).max(1000).default(0.15),
+    bobFrequency: z.number().finite().min(0).max(1000).default(1)
+  }).strict(),
+  z.object({
+    kind: z.literal("activator"),
+    targetPath: z.string().min(1).max(512),
+    ...gameplayInteractorSchema,
+    affectedPaths: z.array(z.string().min(1).max(512)).min(1).max(32),
+    action: z.enum(["activate", "deactivate", "toggle"]).default("activate"),
+    oneShot: z.boolean().default(true),
+    revertOnExit: z.boolean().default(false)
+  }).strict()
+]);
+
+server.registerTool(
+  "unity.gameplay.compose",
+  {
+    description: "Turn existing scene objects into checkpointed proximity doors, pickups, and multi-target activators.",
+    inputSchema: z.object({
+      dryRun: z.boolean().default(true),
+      confirm: z.boolean().default(false),
+      templates: z.array(gameplayTemplateSchema).min(1).max(20)
+    }).strict()
+  },
+  async (input) => bridgeTool("unity.gameplay.compose", input)
 );
 
 server.registerTool(
@@ -337,6 +613,27 @@ server.registerTool(
 );
 
 server.registerTool(
+  "unity.scripts.author",
+  {
+    description: "Validate and hash-confirm a runtime MonoBehaviour, then write, compile, optionally attach, verify, and roll back on failure.",
+    inputSchema: z.object({
+      dryRun: z.boolean().default(true),
+      confirm: z.boolean().default(false),
+      path: z.string().min(1).max(512),
+      source: z.string().min(1).max(262144),
+      expectedSourceSha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
+      expectedClassName: z.string().regex(/^[_\p{L}][_\p{L}\p{N}]*$/u).max(128),
+      expectedNamespace: z.string().regex(/^[_\p{L}][_\p{L}\p{N}]*(?:\.[_\p{L}][_\p{L}\p{N}]*)*$/u).max(256).optional(),
+      overwrite: z.boolean().default(false),
+      attachToObjectPath: z.string().min(1).max(512).optional(),
+      autoRollbackOnCompileError: z.boolean().default(true),
+      timeoutSeconds: z.number().int().min(10).max(1800).default(300)
+    }).strict()
+  },
+  async (input) => bridgeTool("unity.scripts.author", input)
+);
+
+server.registerTool(
   "unity.assemblies.list",
   {
     description: "List Unity script assemblies and assembly definition metadata.",
@@ -359,7 +656,7 @@ server.registerTool(
 server.registerTool(
   "unity.project.settings.inspect",
   {
-    description: "Inspect high-level Unity project and player settings.",
+    description: "Inspect high-level Unity project, player settings, tags, layers, render pipeline, and input-system mode.",
     inputSchema: z.object({})
   },
   async () => bridgeTool("unity.project.settings.inspect")
@@ -368,7 +665,7 @@ server.registerTool(
 server.registerTool(
   "unity.project.settings.update",
   {
-    description: "Update selected Project Settings, Android Player Settings, and Build Settings with a durable checkpoint.",
+    description: "Update selected Project Settings, Android Player Settings, tags, layers, Active Input Handling, and Build Settings with a durable checkpoint.",
     inputSchema: z.object({
       dryRun: z.boolean().default(true),
       confirm: z.boolean().default(false),
@@ -383,6 +680,9 @@ server.registerTool(
       buildAppBundle: z.boolean().optional(),
       developmentBuild: z.boolean().optional(),
       connectProfiler: z.boolean().optional(),
+      addTags: z.array(z.string().min(1).max(64)).max(200).optional(),
+      addLayers: z.array(z.string().min(1).max(32)).max(24).optional(),
+      activeInputHandling: z.enum(["legacy", "old", "input_manager", "new", "input_system", "both"]).optional(),
       scenes: z.array(z.object({
         path: z.string().min(1).max(512),
         enabled: z.boolean().default(true)
@@ -444,7 +744,7 @@ server.registerTool(
 server.registerTool(
   "unity.tests.run",
   {
-    description: "Run Unity Edit Mode or Play Mode tests and persist an XML result artifact.",
+    description: "Run Unity Edit Mode or Play Mode tests, optionally inject frame-timed new Input System events, and persist an XML result artifact.",
     inputSchema: z.object({
       dryRun: z.boolean().default(true),
       confirm: z.boolean().default(false),
@@ -454,7 +754,38 @@ server.registerTool(
       categoryNames: z.array(z.string().min(1).max(256)).max(100).default([]),
       assemblyNames: z.array(z.string().min(1).max(256)).max(100).default([]),
       runSynchronously: z.boolean().default(false),
-      saveModifiedScenes: z.boolean().default(false)
+      saveModifiedScenes: z.boolean().default(false),
+      inputStartDelayFrames: z.number().int().min(0).max(10000).default(1),
+      inputEvents: z.array(z.discriminatedUnion("valueType", [
+        z.object({
+          valueType: z.literal("button"),
+          frameOffset: z.number().int().min(0).max(100000),
+          targetTest: z.string().min(1).max(512).optional(),
+          device: z.enum(["keyboard", "mouse", "gamepad"]),
+          control: z.string().min(1).max(128),
+          action: z.enum(["press", "release"]),
+          durationFrames: z.number().int().min(1).max(100000).default(1)
+        }).strict(),
+        z.object({
+          valueType: z.literal("axis"),
+          frameOffset: z.number().int().min(0).max(100000),
+          targetTest: z.string().min(1).max(512).optional(),
+          device: z.enum(["mouse", "gamepad"]),
+          control: z.string().min(1).max(128),
+          action: z.literal("set"),
+          value: z.number().finite().min(-100000).max(100000)
+        }).strict(),
+        z.object({
+          valueType: z.literal("vector2"),
+          frameOffset: z.number().int().min(0).max(100000),
+          targetTest: z.string().min(1).max(512).optional(),
+          device: z.enum(["mouse", "gamepad"]),
+          control: z.string().min(1).max(128),
+          action: z.literal("set"),
+          x: z.number().finite().min(-100000).max(100000),
+          y: z.number().finite().min(-100000).max(100000)
+        }).strict()
+      ])).max(500).default([])
     }).strict()
   },
   async (input) => bridgeTool("unity.tests.run", input)
@@ -566,14 +897,50 @@ const audioImportSchema = z.object({
   sampleRateOverride: z.number().int().min(0).max(192000).default(0)
 }).strict();
 
+const animatorParameterSchema = z.object({
+  name: z.string().min(1).max(128),
+  type: z.enum(["float", "int", "bool", "trigger"]).default("float"),
+  defaultFloat: z.number().finite().default(0),
+  defaultInt: z.number().int().default(0),
+  defaultBool: z.boolean().default(false)
+}).strict();
+
+const animatorStateSchema = z.object({
+  name: z.string().min(1).max(128),
+  clipPath: z.string().min(1).max(512),
+  clipName: z.string().min(1).max(128).optional(),
+  speed: z.number().finite().min(-100).max(100).default(1),
+  writeDefaultValues: z.boolean().default(true),
+  positionX: z.number().finite().default(0),
+  positionY: z.number().finite().default(0)
+}).strict();
+
+const animatorTransitionConditionSchema = z.object({
+  mode: z.enum(["if", "if_not", "greater", "less", "equals", "not_equal"]).default("if"),
+  threshold: z.number().finite().default(0),
+  parameter: z.string().min(1).max(128)
+}).strict();
+
+const animatorTransitionSchema = z.object({
+  fromState: z.string().min(1).max(128),
+  toState: z.string().min(1).max(128),
+  hasExitTime: z.boolean().default(true),
+  exitTime: z.number().finite().min(0).max(1000).default(1),
+  duration: z.number().finite().min(0).max(1000).default(0.1),
+  hasFixedDuration: z.boolean().default(true),
+  offset: z.number().finite().min(0).max(1).default(0),
+  canTransitionToSelf: z.boolean().default(false),
+  conditions: z.array(animatorTransitionConditionSchema).max(20).default([])
+}).strict();
+
 server.registerTool(
   "unity.assets.author",
   {
-    description: "Create or edit shaders, materials, animation clips, generated WAV audio, and audio import settings with checkpoints.",
+    description: "Create or edit shaders, materials, animation clips, Animator Controllers, generated WAV audio, and audio import settings with checkpoints.",
     inputSchema: z.object({
       dryRun: z.boolean().default(true),
       confirm: z.boolean().default(false),
-      kind: z.enum(["shader", "material", "animation_clip", "audio_tone", "audio_import"]),
+      kind: z.enum(["shader", "material", "animation_clip", "animator_controller", "audio_tone", "audio_import"]),
       path: z.string().min(1).max(512),
       shaderSource: z.string().max(1_048_576).optional(),
       shaderName: z.string().min(1).max(256).optional(),
@@ -584,6 +951,11 @@ server.registerTool(
       clearExistingCurves: z.boolean().default(false),
       frameRate: z.number().min(1).max(240).default(60),
       animationCurves: z.array(animationCurveSchema).max(500).default([]),
+      clearExistingStates: z.boolean().default(true),
+      defaultState: z.string().min(1).max(128).optional(),
+      animatorParameters: z.array(animatorParameterSchema).max(100).default([]),
+      animatorStates: z.array(animatorStateSchema).max(200).default([]),
+      animatorTransitions: z.array(animatorTransitionSchema).max(500).default([]),
       audioTone: z.object({
         frequencyHz: z.number().min(1).max(86000).default(440),
         durationSeconds: z.number().min(0.01).max(300).default(1),
@@ -597,6 +969,174 @@ server.registerTool(
   async (input) => bridgeTool("unity.assets.author", input)
 );
 
+const modelImportSettingsSchema = z.object({
+  globalScale: z.number().finite().min(0.0001).max(10000).default(1),
+  useFileScale: z.boolean().default(true),
+  importBlendShapes: z.boolean().default(true),
+  importVisibility: z.boolean().default(true),
+  importCameras: z.boolean().default(false),
+  importLights: z.boolean().default(false),
+  addCollider: z.boolean().default(false),
+  importAnimation: z.boolean().default(true),
+  animationType: z.enum(["none", "legacy", "generic", "human"]).default("generic"),
+  isReadable: z.boolean().default(false),
+  meshCompression: z.enum(["off", "low", "medium", "high"]).default("off"),
+  normalizeOnInstantiate: z.boolean().default(false),
+  recenterPivot: z.boolean().default(false),
+  pivotMode: z.enum(["bounds_center", "bounds_base"]).default("bounds_center"),
+  alignToGround: z.boolean().default(false),
+  forwardAxis: z.enum(["keep", "z", "+z", "-z", "negative_z", "x", "+x", "-x", "negative_x"]).default("keep")
+}).strict();
+
+const textureImportSettingsSchema = z.object({
+  textureType: z.enum(["default", "normal_map", "sprite", "cursor", "cookie", "lightmap", "single_channel"]).default("default"),
+  sRgb: z.boolean().default(true),
+  alphaIsTransparency: z.boolean().default(false),
+  mipmapEnabled: z.boolean().default(true),
+  isReadable: z.boolean().default(false),
+  maxTextureSize: z.number().int().min(32).max(16384).default(2048),
+  compression: z.enum(["uncompressed", "compressed", "compressed_hq", "compressed_lq"]).default("compressed")
+}).strict();
+
+server.registerTool(
+  "unity.assets.catalog.search",
+  {
+    description: "Search bundled and configured CDN asset catalogs whose entries include license, provenance, byte size, and SHA-256 metadata.",
+    inputSchema: z.object({
+      query: z.string().max(200).default(""),
+      kind: z.enum(["all", "model", "texture", "audio"]).default("all"),
+      tags: z.array(z.string().min(1).max(64)).max(20).default([]),
+      maxResults: z.number().int().min(1).max(200).default(50),
+      refresh: z.boolean().default(false)
+    }).strict()
+  },
+  async (input) => {
+    try {
+      return jsonToolResult(await assetCatalog.search(input));
+    } catch (error) {
+      return errorToolResult(error);
+    }
+  }
+);
+
+server.registerTool(
+  "unity.assets.import",
+  {
+    description: "Copy or download a model, texture, or audio file, apply importer settings, and optionally instantiate, normalize model pivots/axes, or save a prefab.",
+    inputSchema: z.object({
+      dryRun: z.boolean().default(true),
+      confirm: z.boolean().default(false),
+      sourceKind: z.enum(["local", "url"]).default("local"),
+      sourcePath: z.string().min(1).max(4096).optional(),
+      url: z.string().url().max(4096).optional(),
+      destinationPath: z.string().min(1).max(512),
+      overwrite: z.boolean().default(false),
+      expectedSha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
+      maxBytes: z.number().int().min(1).max(2_147_483_648).default(268_435_456),
+      timeoutSeconds: z.number().int().min(5).max(1800).default(120),
+      allowInsecureLocalhost: z.boolean().default(false),
+      model: modelImportSettingsSchema.optional(),
+      texture: textureImportSettingsSchema.optional(),
+      audio: audioImportSchema.optional(),
+      instantiate: z.boolean().default(false),
+      objectName: z.string().min(1).max(80).optional(),
+      parentPath: z.string().min(1).max(512).optional(),
+      transform: z.object({
+        position: sceneVectorSchema.optional(),
+        rotationEuler: sceneVectorSchema.optional(),
+        scale: sceneVectorSchema.optional()
+      }).strict().optional(),
+      saveAsPrefabPath: z.string().min(1).max(512).optional()
+    }).strict()
+  },
+  async (input) => bridgeTool("unity.assets.import", input)
+);
+
+server.registerTool(
+  "unity.assets.import_from_catalog",
+  {
+    description: "Resolve a license-allowlisted catalog asset, enforce its declared SHA-256 and size, import it through Unity, optionally normalize models, and retain provenance in the audit result.",
+    inputSchema: z.object({
+      dryRun: z.boolean().default(true),
+      confirm: z.boolean().default(false),
+      catalogAssetId: z.string().min(3).max(256),
+      expectedCatalogSha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
+      refreshCatalog: z.boolean().default(false),
+      destinationPath: z.string().min(1).max(512),
+      overwrite: z.boolean().default(false),
+      maxBytes: z.number().int().min(1).max(2_147_483_648).default(268_435_456),
+      timeoutSeconds: z.number().int().min(5).max(1800).default(120),
+      model: modelImportSettingsSchema.optional(),
+      texture: textureImportSettingsSchema.optional(),
+      audio: audioImportSchema.optional(),
+      instantiate: z.boolean().default(false),
+      objectName: z.string().min(1).max(80).optional(),
+      parentPath: z.string().min(1).max(512).optional(),
+      transform: z.object({
+        position: sceneVectorSchema.optional(),
+        rotationEuler: sceneVectorSchema.optional(),
+        scale: sceneVectorSchema.optional()
+      }).strict().optional(),
+      saveAsPrefabPath: z.string().min(1).max(512).optional()
+    }).strict()
+  },
+  async (input) => {
+    try {
+      const asset = await assetCatalog.resolve(input.catalogAssetId, input.refreshCatalog);
+      if (input.expectedCatalogSha256
+          && input.expectedCatalogSha256.toLowerCase() !== asset.sha256) {
+        return errorToolResult(new Error(`Catalog SHA-256 changed for '${asset.assetId}'. Search the catalog again before confirming the import.`));
+      }
+
+      if (input.maxBytes < asset.sizeBytes) {
+        return errorToolResult(new Error(`Catalog asset '${asset.assetId}' declares ${asset.sizeBytes} bytes, exceeding maxBytes=${input.maxBytes}.`));
+      }
+
+      const destinationFormat = input.destinationPath.split(".").pop()?.toLowerCase();
+      if (destinationFormat !== asset.format) {
+        return errorToolResult(new Error(`destinationPath must end in .${asset.format} for catalog asset '${asset.assetId}'.`));
+      }
+
+      const { catalogAssetId: _catalogAssetId, expectedCatalogSha256: _expectedHash, refreshCatalog: _refresh, ...importInput } = input;
+      const sourceInput = asset.source.kind === "local"
+        ? { sourceKind: "local", sourcePath: asset.source.path }
+        : {
+            sourceKind: "url",
+            url: asset.source.url,
+            allowInsecureLocalhost: asset.source.allowInsecureLocalhost
+          };
+      const response = await bridge.call("unity.assets.import_from_catalog", {
+        ...importInput,
+        ...sourceInput,
+        expectedSha256: asset.sha256,
+        catalogProvenance: {
+          catalogId: asset.catalogId,
+          catalogAssetId: asset.assetId,
+          catalogName: asset.catalogName,
+          catalogHomepage: asset.catalogHomepage,
+          sourceUrl: asset.sourceUrl,
+          licenseSpdxId: asset.license.spdxId,
+          licenseName: asset.license.name,
+          licenseUrl: asset.license.url,
+          attribution: asset.license.attribution ?? ""
+        }
+      });
+
+      if (!response.ok) {
+        return errorToolResult(new Error(response.error ?? "Unity catalog import failed."));
+      }
+
+      const result = parseJsonObject(response.resultJson);
+      return jsonToolResult({
+        ...result,
+        catalogAsset: toPublicCatalogAsset(asset)
+      });
+    } catch (error) {
+      return errorToolResult(error);
+    }
+  }
+);
+
 const prefabEditSchema = z.object({
   kind: z.enum(["create_child", "delete", "rename", "set_active", "add_component", "remove_component", "set_property"]),
   objectPath: z.string().max(512).default(""),
@@ -605,7 +1145,7 @@ const prefabEditSchema = z.object({
   componentType: z.string().min(1).max(256).optional(),
   componentIndex: z.number().int().min(0).default(0),
   propertyPath: z.string().min(1).max(512).optional(),
-  value: sceneSerializedValueSchema.optional()
+  value: serializedValueSchema.optional()
 }).strict();
 
 server.registerTool(
@@ -787,9 +1327,47 @@ async function bridgeTool(capability: string, input: unknown = {}) {
   };
 }
 
+function jsonToolResult(value: unknown) {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify(value, null, 2)
+      }
+    ]
+  };
+}
+
+function errorToolResult(error: unknown) {
+  return {
+    isError: true,
+    content: [
+      {
+        type: "text" as const,
+        text: error instanceof Error ? error.message : String(error)
+      }
+    ]
+  };
+}
+
+function parseJsonObject(value: string | undefined): Record<string, unknown> {
+  if (!value) {
+    return {};
+  }
+
+  const parsed = JSON.parse(value) as unknown;
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown>
+    : { result: parsed };
+}
+
 function parseTimeout(value: string | undefined): number {
-  const parsed = Number(value ?? 10_000);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 10_000;
+  return parsePositiveInteger(value, 10_000);
+}
+
+function parsePositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number(value ?? fallback);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
 async function main(): Promise<void> {

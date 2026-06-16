@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
@@ -33,6 +34,42 @@ namespace UnityAI.ControlPlane.Editor
             {
                 writer.WriteLine(JsonUtility.ToJson(auditEvent, false));
             }
+        }
+
+        public static UnityAiAuditEvent[] ReadAll(out int malformedLineCount)
+        {
+            malformedLineCount = 0;
+            if (!File.Exists(AuditLogPath))
+            {
+                return Array.Empty<UnityAiAuditEvent>();
+            }
+
+            var events = new List<UnityAiAuditEvent>();
+            foreach (var line in File.ReadLines(AuditLogPath))
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var auditEvent = JsonUtility.FromJson<UnityAiAuditEvent>(line);
+                    if (auditEvent == null || string.IsNullOrWhiteSpace(auditEvent.capability))
+                    {
+                        malformedLineCount++;
+                        continue;
+                    }
+
+                    events.Add(auditEvent);
+                }
+                catch
+                {
+                    malformedLineCount++;
+                }
+            }
+
+            return events.ToArray();
         }
 
         private static string GetProjectRoot()

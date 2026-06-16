@@ -32,7 +32,10 @@ namespace UnityAI.ControlPlane.Editor
         public bool isArray;
         public bool editable;
         public string value;
+        public string objectReferenceKind;
         public string objectReferencePath;
+        public string objectReferenceComponentType;
+        public int objectReferenceComponentIndex;
     }
 
     [Serializable]
@@ -190,7 +193,7 @@ namespace UnityAI.ControlPlane.Editor
 
         private static SerializedPropertyInfo ToPropertyInfo(SerializedProperty property)
         {
-            return new SerializedPropertyInfo
+            var info = new SerializedPropertyInfo
             {
                 path = property.propertyPath,
                 displayName = property.displayName,
@@ -199,8 +202,14 @@ namespace UnityAI.ControlPlane.Editor
                 isArray = property.isArray,
                 editable = property.editable,
                 value = GetPropertyValue(property),
-                objectReferencePath = GetObjectReferencePath(property)
+                objectReferenceKind = "none",
+                objectReferencePath = string.Empty,
+                objectReferenceComponentType = string.Empty,
+                objectReferenceComponentIndex = -1
             };
+
+            PopulateObjectReferenceInfo(property, info);
+            return info;
         }
 
         private static string GetPropertyValue(SerializedProperty property)
@@ -267,30 +276,37 @@ namespace UnityAI.ControlPlane.Editor
             }
         }
 
-        private static string GetObjectReferencePath(SerializedProperty property)
+        private static void PopulateObjectReferenceInfo(SerializedProperty property, SerializedPropertyInfo info)
         {
             if (property.propertyType != SerializedPropertyType.ObjectReference || property.objectReferenceValue == null)
             {
-                return string.Empty;
+                return;
             }
 
             var assetPath = AssetDatabase.GetAssetPath(property.objectReferenceValue);
             if (!string.IsNullOrEmpty(assetPath))
             {
-                return assetPath;
+                info.objectReferenceKind = "asset";
+                info.objectReferencePath = assetPath;
+                return;
             }
 
             if (property.objectReferenceValue is GameObject gameObject)
             {
-                return GetGameObjectPath(gameObject);
+                info.objectReferenceKind = "game_object";
+                info.objectReferencePath = GetGameObjectPath(gameObject);
+                return;
             }
 
             if (property.objectReferenceValue is Component component)
             {
-                return GetGameObjectPath(component.gameObject) + "#" + component.GetType().FullName;
+                var type = component.GetType();
+                var components = component.gameObject.GetComponents(type);
+                info.objectReferenceKind = "component";
+                info.objectReferencePath = GetGameObjectPath(component.gameObject);
+                info.objectReferenceComponentType = type.FullName ?? type.Name;
+                info.objectReferenceComponentIndex = Array.IndexOf(components, component);
             }
-
-            return string.Empty;
         }
 
         private static string GetScriptPath(Component component)

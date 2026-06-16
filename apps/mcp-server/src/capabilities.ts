@@ -16,15 +16,22 @@ export const initialCapabilities: CapabilityManifest[] = [
     verification: ["structured_observation", "console_snapshot", "console_diagnostics"]
   },
   {
+    name: "unity.audit.report",
+    description: "Generate hashed JSON and Markdown reports from persisted audit events and before/after evidence artifacts.",
+    permissions: ["read_artifacts", "write_artifacts"],
+    effects: ["report_only", "write_artifacts", "write_audit_log"],
+    verification: ["structured_observation", "operation_audited", "audit_report_generated", "evidence_hash_verified"]
+  },
+  {
     name: "unity.console.read",
-    description: "Read Unity Console messages and summarize errors, warnings, and logs.",
+    description: "Read Unity Console entries with strict compilation, runtime, bridge, and import classifications plus blocking status.",
     permissions: ["read_console"],
     effects: ["report_only"],
     verification: ["console_snapshot"]
   },
   {
     name: "unity.console.diagnose",
-    description: "Classify Unity Console entries and return safe, structured diagnostic guidance.",
+    description: "Classify Unity Console entries into blocking CompilationError and non-blocking runtime, bridge, import, or warning diagnostics.",
     permissions: ["read_console"],
     effects: ["report_only"],
     verification: ["console_diagnostics"]
@@ -59,7 +66,7 @@ export const initialCapabilities: CapabilityManifest[] = [
   },
   {
     name: "unity.scene.inspect",
-    description: "Inspect the active scene hierarchy at a high level.",
+    description: "Inspect a bounded, optionally filtered view of the active scene hierarchy.",
     permissions: ["read_scenes"],
     effects: ["report_only"],
     verification: ["structured_observation"]
@@ -72,6 +79,27 @@ export const initialCapabilities: CapabilityManifest[] = [
     verification: ["structured_observation"]
   },
   {
+    name: "unity.physics.inspect",
+    description: "Inspect bounded 3D/2D physics state, collider alignment, penetrations, relative impact speeds, and sampled net-force estimates.",
+    permissions: ["read_scenes"],
+    effects: ["report_only"],
+    verification: ["structured_observation"]
+  },
+  {
+    name: "unity.runtime.telemetry",
+    description: "Capture compact per-object runtime telemetry for transforms, render bounds, collider bounds, rigidbodies, velocities, and scene time.",
+    permissions: ["read_scenes"],
+    effects: ["report_only"],
+    verification: ["structured_observation", "runtime_telemetry_captured"]
+  },
+  {
+    name: "unity.ui.audit",
+    description: "Audit active-scene UI for Canvas, scaler, EventSystem, contrast, layout, labels, and agent-action markers.",
+    permissions: ["read_scenes"],
+    effects: ["report_only"],
+    verification: ["structured_observation", "ui_audit_completed", "ui_quality_gate_passed"]
+  },
+  {
     name: "unity.scene.upsert_game_object",
     description: "Create or update a GameObject in the active scene from a safe, schema-bound spec.",
     permissions: ["modify_scenes"],
@@ -80,10 +108,24 @@ export const initialCapabilities: CapabilityManifest[] = [
   },
   {
     name: "unity.scene.batch",
-    description: "Apply an atomic, undo-backed batch of scene hierarchy and serialized component operations.",
+    description: "Apply an atomic, undo-backed batch of scene hierarchy, serialized component, and cross-object reference operations.",
     permissions: ["read_assets", "modify_scenes"],
     effects: ["report_only", "write_audit_log", "scene_change"],
     verification: ["operation_audited", "structured_observation", "scene_mutation_verified", "batch_applied", "component_state_verified"]
+  },
+  {
+    name: "unity.ui.compose",
+    description: "Create or replace high-quality Canvas UI screens with responsive layout, EventSystem, readable contrast, semantic action markers, audit, and rollback.",
+    permissions: ["read_scenes", "modify_scenes"],
+    effects: ["report_only", "write_checkpoint", "write_audit_log", "scene_change"],
+    verification: ["operation_audited", "structured_observation", "checkpoint_created", "ui_screen_composed", "ui_audit_completed", "ui_quality_gate_passed", "scene_mutation_verified", "rollback_verified"]
+  },
+  {
+    name: "unity.gameplay.compose",
+    description: "Configure reusable door, pickup, and multi-target activator gameplay templates on existing scene objects.",
+    permissions: ["read_scenes", "modify_scenes"],
+    effects: ["report_only", "write_checkpoint", "write_audit_log", "scene_change"],
+    verification: ["operation_audited", "structured_observation", "checkpoint_created", "gameplay_template_applied", "component_state_verified", "scene_mutation_verified", "rollback_verified"]
   },
   {
     name: "unity.prefabs.list",
@@ -114,6 +156,13 @@ export const initialCapabilities: CapabilityManifest[] = [
     verification: ["structured_observation"]
   },
   {
+    name: "unity.scripts.author",
+    description: "Validate, hash-confirm, write, compile, and optionally attach a checkpointed runtime MonoBehaviour with automatic rollback.",
+    permissions: ["read_project", "read_console", "modify_assets", "modify_scenes", "execute_editor_script"],
+    effects: ["write_checkpoint", "write_audit_log", "asset_change", "code_change", "scene_change"],
+    verification: ["script_source_validated", "checkpoint_created", "operation_audited", "compilation_completed", "console_snapshot", "script_compilation_verified", "component_state_verified", "scene_mutation_verified", "checkpoint_restored"]
+  },
+  {
     name: "unity.assemblies.list",
     description: "List Unity script assemblies and assembly definition metadata.",
     permissions: ["read_project"],
@@ -136,14 +185,14 @@ export const initialCapabilities: CapabilityManifest[] = [
   },
   {
     name: "unity.project.settings.inspect",
-    description: "Inspect high-level Unity project and player settings.",
+    description: "Inspect high-level Unity project, player settings, tags, layers, render pipeline, and input-system mode.",
     permissions: ["read_project_settings"],
     effects: ["report_only"],
     verification: ["structured_observation"]
   },
   {
     name: "unity.project.settings.update",
-    description: "Update selected Project, Player, Android, and Build Settings with a durable checkpoint.",
+    description: "Update selected Project, Player, Android, tag, layer, input, and Build Settings with a durable checkpoint.",
     permissions: ["read_project_settings", "modify_project_settings"],
     effects: ["write_checkpoint", "project_setting_change"],
     verification: ["checkpoint_created", "project_settings_verified"]
@@ -171,7 +220,7 @@ export const initialCapabilities: CapabilityManifest[] = [
   },
   {
     name: "unity.tests.run",
-    description: "Run Unity Edit Mode or Play Mode tests and persist XML results.",
+    description: "Run Unity Edit Mode or Play Mode tests, optionally inject frame-timed new Input System events, and persist XML results.",
     permissions: ["run_tests", "write_artifacts"],
     effects: ["test_execution", "write_artifacts"],
     verification: ["tests_passed", "test_results_available"]
@@ -220,10 +269,31 @@ export const initialCapabilities: CapabilityManifest[] = [
   },
   {
     name: "unity.assets.author",
-    description: "Create or edit shaders, materials, animation clips, WAV audio, and audio import settings.",
+    description: "Create or edit shaders, materials, animation clips, Animator Controllers, WAV audio, and audio import settings.",
     permissions: ["read_assets", "modify_assets", "write_artifacts"],
     effects: ["write_checkpoint", "asset_change"],
     verification: ["checkpoint_created", "asset_mutation_verified"]
+  },
+  {
+    name: "unity.assets.import",
+    description: "Copy or download models, textures, and audio into Assets, configure Unity importers, and optionally instantiate, normalize, or save a prefab.",
+    permissions: ["read_external_files", "network_access", "read_assets", "modify_assets", "modify_scenes", "write_artifacts"],
+    effects: ["write_checkpoint", "write_audit_log", "asset_change", "scene_change"],
+    verification: ["checkpoint_created", "operation_audited", "asset_import_verified", "asset_normalized", "scene_mutation_verified", "prefab_mutation_verified"]
+  },
+  {
+    name: "unity.assets.catalog.search",
+    description: "Search license-allowlisted asset catalogs with provenance, size, format, and SHA-256 metadata.",
+    permissions: ["network_access", "read_external_files"],
+    effects: ["report_only"],
+    verification: ["structured_observation", "asset_license_verified", "asset_hash_available"]
+  },
+  {
+    name: "unity.assets.import_from_catalog",
+    description: "Resolve and import a catalog asset with enforced license, provenance, byte limit, SHA-256 verification, and optional model normalization.",
+    permissions: ["network_access", "read_external_files", "read_assets", "modify_assets", "modify_scenes", "write_artifacts"],
+    effects: ["write_checkpoint", "write_audit_log", "asset_change", "scene_change"],
+    verification: ["asset_license_verified", "asset_hash_verified", "checkpoint_created", "operation_audited", "asset_import_verified", "asset_normalized", "scene_mutation_verified", "prefab_mutation_verified"]
   },
   {
     name: "unity.prefab.manage",

@@ -15,4 +15,10 @@ The product should be powerful enough to operate real Unity projects, but contro
 
 ## Default stance
 
-Read-only and report-only operations are safe by default. Mutations, generated Editor scripts, package changes, build changes, and destructive actions require stronger gates.
+Read-only and report-only operations are safe by default. Mutations, generated scripts, package changes, build changes, and destructive actions require stronger gates.
+
+## Generated runtime code
+
+`unity.scripts.author` does not expose unrestricted Editor scripting. It only accepts project `MonoBehaviour` source after a dry-run validation and exact SHA-256 confirmation. The operation blocks Editor APIs, edit-time callbacks, process, file, network, reflection, native interop, unsafe code, and termination APIs; checkpoints the target; recompiles through a persistent job; verifies the resolved class; and rolls back by default when compilation or attachment fails.
+
+These controls are defense in depth, not a C# sandbox. A source-pattern policy cannot prove arbitrary gameplay code harmless, so generated components still require normal code review, tests, and project-level trust.

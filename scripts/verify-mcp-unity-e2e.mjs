@@ -4,7 +4,8 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { existsSync, rmSync, writeFileSync, mkdirSync, cpSync, readFileSync, symlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createServer } from "node:http";
 
 const repoRoot = resolve(new URL("..", import.meta.url).pathname);
 const packageSource = join(repoRoot, "apps/unity-plugin/Packages/com.unity-ai.control-plane");
@@ -17,6 +18,8 @@ const tempProject = join(repoRoot, ".unity-ai/e2e-project");
 const packagesDir = join(tempProject, "Packages");
 const assetsDir = join(tempProject, "Assets");
 const projectSettingsDir = join(tempProject, "ProjectSettings");
+const externalAssetsDir = join(tempProject, "ExternalAssets");
+const localModelSourcePath = join(externalAssetsDir, "local-triangle.obj");
 const artifactsDir = join(repoRoot, "artifacts/unity-verification");
 const readyFile = join(artifactsDir, "bridge-ready.txt");
 const tokenFile = join(artifactsDir, "bridge-token.txt");
@@ -27,6 +30,18 @@ const diagnosticExceptionMarker = "UNITY_AI_E2E_DIAGNOSTIC_EXCEPTION";
 const applyFixFile = "Assets/UnityAiE2EApplyFixFixture.cs";
 const applyFixOriginalLine = "    public const string Marker = \"before\";";
 const applyFixReplacementLine = "    public const string Marker = \"after\";";
+const localObjSource = `o LocalTriangle
+v 0 0 0
+v 1 0 0
+v 0 1 0
+f 1 2 3
+`;
+const remoteObjSource = `o RemoteTriangle
+v 0 0 0
+v 0 0 1
+v 0 1 0
+f 1 2 3
+`;
 
 if (!unityPath || !existsSync(unityPath)) {
   fail(`Unity executable not found. Set UNITY_PATH or pass it as the first argument.`);
@@ -46,6 +61,7 @@ mkdirSync(join(assetsDir, "Editor"), { recursive: true });
 mkdirSync(join(assetsDir, "Tests/EditMode"), { recursive: true });
 mkdirSync(join(assetsDir, "Tests/PlayMode"), { recursive: true });
 mkdirSync(projectSettingsDir, { recursive: true });
+mkdirSync(externalAssetsDir, { recursive: true });
 mkdirSync(artifactsDir, { recursive: true });
 rmSync(join(tempProject, "Library/UnityAIControlPlane"), { recursive: true, force: true });
 rmSync(join(tempProject, "UnityAIArtifacts"), { recursive: true, force: true });
@@ -65,7 +81,8 @@ writeFileSync(
     {
       dependencies: {
         "com.unity-ai.control-plane": "file:com.unity-ai.control-plane",
-        "com.unity.test-framework": "1.6.0"
+        "com.unity.test-framework": "1.6.0",
+        "com.unity.modules.physics": "1.0.0"
       }
     },
     null,
@@ -74,6 +91,7 @@ writeFileSync(
 );
 
 writeFileSync(join(projectSettingsDir, "ProjectVersion.txt"), "m_EditorVersion: 6000.4.9f1\n");
+writeFileSync(localModelSourcePath, localObjSource);
 writeFileSync(join(assetsDir, "UnityAiCheckpointFixture.txt"), "checkpoint-before\n");
 writeFileSync(
   join(assetsDir, "Tests/EditMode/UnityAiE2E.EditMode.asmdef"),
@@ -122,6 +140,17 @@ public sealed class UnityAiPlayModeTests
 `
 );
 writeFileSync(
+  join(assetsDir, "UnityAiReferenceFixture.cs"),
+  `using UnityEngine;
+
+public sealed class UnityAiReferenceFixture : MonoBehaviour
+{
+    public GameObject targetObject;
+    public Rigidbody targetBody;
+}
+`
+);
+writeFileSync(
   join(tempProject, applyFixFile),
   `public static class UnityAiE2EApplyFixFixture
 {
@@ -153,6 +182,9 @@ public static class UnityAiE2EConsoleDiagnosticsFixture
 `
 );
 
+const assetFixtureServer = await startAssetFixtureServer(remoteObjSource);
+const remoteModelUrl = `http://127.0.0.1:${assetFixtureServer.port}/remote-triangle.obj`;
+const catalogManifestUrl = `http://127.0.0.1:${assetFixtureServer.port}/catalog.json`;
 const unity = spawn(unityPath, [
   "-batchmode",
   "-nographics",
@@ -183,7 +215,9 @@ try {
     env: {
       ...process.env,
       UNITY_AI_BRIDGE_URL: bridgeUrl,
-      UNITY_AI_BRIDGE_TOKEN: bridgeToken
+      UNITY_AI_BRIDGE_TOKEN: bridgeToken,
+      UNITY_AI_ASSET_CATALOG_URLS: catalogManifestUrl,
+      UNITY_AI_CATALOG_ALLOW_INSECURE_LOCALHOST: "1"
     }
   });
 
@@ -191,7 +225,7 @@ try {
 
   assertCapabilities(await callJsonTool(client, "unity.capabilities.list", {}));
   await assertApplyFixFlow(client);
-  const before = await callJsonTool(client, "unity.project.inspect", {});
+  assertProjectInspect(await callJsonTool(client, "unity.project.inspect", {}));
   await callJsonTool(client, "unity.console.read", {});
   assertConsoleDiagnostics(await waitForConsoleDiagnostics(client, 60_000));
   assertConsoleFixPlans(await callJsonTool(client, "unity.console.plan_fix", {}));
@@ -208,8 +242,9 @@ try {
   assertPackageList(await callJsonTool(client, "unity.packages.list", {}));
   assertProjectSettings(await callJsonTool(client, "unity.project.settings.inspect", {}));
   await callJsonTool(client, "unity.meta_xr.validate_setup", {});
-  await assertVisualVerificationFlow(client);
+  const visualEvidence = await assertVisualVerificationFlow(client);
   await assertExtendedControlPlaneFlow(client);
+  const before = await callJsonTool(client, "unity.project.inspect", {});
 
   const dryRun = await callJsonTool(client, "unity.editor.create_empty_game_object", {
     name: "Unity AI E2E Dry Run",
@@ -261,6 +296,7 @@ try {
     verificationStatus: "passed",
     requiresConfirmation: false
   });
+  await assertAuditReportFlow(client, created, visualEvidence.baseline);
 
   const after = await callJsonTool(client, "unity.project.inspect", {});
   if (after.rootGameObjectCount !== before.rootGameObjectCount + 1) {
@@ -333,6 +369,7 @@ try {
 } finally {
   unity.kill("SIGTERM");
   await waitForProcessExit(unity, 10_000);
+  await closeServer(assetFixtureServer.server);
   rmSync(tokenFile, { force: true });
 }
 
@@ -416,6 +453,21 @@ function assertCapabilities(capabilities) {
     fail("unity.project.snapshot capability must declare observation and console diagnostic verification.");
   }
 
+  const auditReportCapability = capabilities.find((capability) => capability.name === "unity.audit.report");
+  if (!auditReportCapability) {
+    fail("unity.capabilities.list did not include unity.audit.report.");
+  }
+
+  if (!auditReportCapability.permissions.includes("read_artifacts") || !auditReportCapability.permissions.includes("write_artifacts")) {
+    fail("unity.audit.report must declare read_artifacts and write_artifacts permissions.");
+  }
+
+  for (const signal of ["audit_report_generated", "evidence_hash_verified", "operation_audited"]) {
+    if (!auditReportCapability.verification.includes(signal)) {
+      fail(`unity.audit.report must declare ${signal} verification.`);
+    }
+  }
+
   if (!Array.isArray(applyFixCapability.permissions) || !applyFixCapability.permissions.includes("modify_assets")) {
     fail("unity.console.apply_fix capability must declare modify_assets permission.");
   }
@@ -450,6 +502,30 @@ function assertCapabilities(capabilities) {
     fail("unity.scene.inspect_game_object must be a read-only scene inspection capability.");
   }
 
+  const physicsInspectCapability = capabilities.find((capability) => capability.name === "unity.physics.inspect");
+  if (!physicsInspectCapability || !physicsInspectCapability.permissions.includes("read_scenes") || !physicsInspectCapability.effects.includes("report_only")) {
+    fail("unity.physics.inspect must be a read-only scene inspection capability.");
+  }
+
+  const runtimeTelemetryCapability = capabilities.find((capability) => capability.name === "unity.runtime.telemetry");
+  if (!runtimeTelemetryCapability
+      || !runtimeTelemetryCapability.permissions.includes("read_scenes")
+      || !runtimeTelemetryCapability.effects.includes("report_only")
+      || !runtimeTelemetryCapability.verification.includes("runtime_telemetry_captured")) {
+    fail("unity.runtime.telemetry must be a read-only telemetry capability with runtime_telemetry_captured verification.");
+  }
+
+  const uiAuditCapability = capabilities.find((capability) => capability.name === "unity.ui.audit");
+  if (!uiAuditCapability || !uiAuditCapability.permissions.includes("read_scenes") || !uiAuditCapability.effects.includes("report_only")) {
+    fail("unity.ui.audit must be a read-only scene UI quality capability.");
+  }
+
+  for (const signal of ["ui_audit_completed", "ui_quality_gate_passed"]) {
+    if (!uiAuditCapability.verification.includes(signal)) {
+      fail(`unity.ui.audit must declare ${signal}.`);
+    }
+  }
+
   const sceneBatchCapability = capabilities.find((capability) => capability.name === "unity.scene.batch");
   if (!sceneBatchCapability) {
     fail("unity.capabilities.list did not include unity.scene.batch.");
@@ -469,6 +545,23 @@ function assertCapabilities(capabilities) {
     }
   }
 
+  const uiComposeCapability = capabilities.find((capability) => capability.name === "unity.ui.compose");
+  if (!uiComposeCapability) {
+    fail("unity.capabilities.list did not include unity.ui.compose.");
+  }
+
+  for (const permission of ["read_scenes", "modify_scenes"]) {
+    if (!uiComposeCapability.permissions.includes(permission)) {
+      fail(`unity.ui.compose must declare ${permission}.`);
+    }
+  }
+
+  for (const signal of ["checkpoint_created", "ui_screen_composed", "ui_audit_completed", "ui_quality_gate_passed", "scene_mutation_verified", "rollback_verified"]) {
+    if (!uiComposeCapability.verification.includes(signal)) {
+      fail(`unity.ui.compose must declare ${signal}.`);
+    }
+  }
+
   const captureCapability = capabilities.find((capability) => capability.name === "unity.vision.capture");
   if (!captureCapability || !captureCapability.permissions.includes("capture_screenshots") || !captureCapability.permissions.includes("write_artifacts")) {
     fail("unity.vision.capture must declare screenshot capture and artifact permissions.");
@@ -485,6 +578,64 @@ function assertCapabilities(capabilities) {
 
   if (!compareCapability.verification.includes("visual_diff_checked") || !compareCapability.verification.includes("visual_regression_detected") || !compareCapability.verification.includes("visual_regression_absent")) {
     fail("unity.vision.compare must declare diff and regression verification signals.");
+  }
+
+  const assetImportCapability = capabilities.find((capability) => capability.name === "unity.assets.import");
+  if (!assetImportCapability) {
+    fail("unity.capabilities.list did not include unity.assets.import.");
+  }
+
+  for (const permission of ["read_external_files", "network_access", "modify_assets", "modify_scenes"]) {
+    if (!assetImportCapability.permissions.includes(permission)) {
+      fail(`unity.assets.import must declare ${permission}.`);
+    }
+  }
+
+  for (const signal of ["asset_import_verified", "asset_normalized", "checkpoint_created", "operation_audited"]) {
+    if (!assetImportCapability.verification.includes(signal)) {
+      fail(`unity.assets.import must declare ${signal}.`);
+    }
+  }
+
+  const assetCatalogSearchCapability = capabilities.find((capability) => capability.name === "unity.assets.catalog.search");
+  const assetCatalogImportCapability = capabilities.find((capability) => capability.name === "unity.assets.import_from_catalog");
+  if (!assetCatalogSearchCapability?.verification.includes("asset_license_verified")
+      || !assetCatalogImportCapability?.verification.includes("asset_hash_verified")) {
+    fail("catalog capabilities must declare license and hash verification.");
+  }
+
+  const scriptAuthoringCapability = capabilities.find((capability) => capability.name === "unity.scripts.author");
+  if (!scriptAuthoringCapability) {
+    fail("unity.capabilities.list did not include unity.scripts.author.");
+  }
+
+  for (const permission of ["read_console", "modify_assets", "modify_scenes", "execute_editor_script"]) {
+    if (!scriptAuthoringCapability.permissions.includes(permission)) {
+      fail(`unity.scripts.author must declare ${permission}.`);
+    }
+  }
+
+  for (const signal of ["script_source_validated", "script_compilation_verified", "checkpoint_restored"]) {
+    if (!scriptAuthoringCapability.verification.includes(signal)) {
+      fail(`unity.scripts.author must declare ${signal}.`);
+    }
+  }
+
+  const gameplayComposeCapability = capabilities.find((capability) => capability.name === "unity.gameplay.compose");
+  if (!gameplayComposeCapability) {
+    fail("unity.capabilities.list did not include unity.gameplay.compose.");
+  }
+
+  for (const permission of ["read_scenes", "modify_scenes"]) {
+    if (!gameplayComposeCapability.permissions.includes(permission)) {
+      fail(`unity.gameplay.compose must declare ${permission}.`);
+    }
+  }
+
+  for (const signal of ["checkpoint_created", "gameplay_template_applied", "component_state_verified", "scene_mutation_verified"]) {
+    if (!gameplayComposeCapability.verification.includes(signal)) {
+      fail(`unity.gameplay.compose must declare ${signal}.`);
+    }
   }
 
   for (const name of [
@@ -1111,9 +1262,31 @@ async function assertSceneBatchFlow(client) {
         name: "UnityAiBatchRenamed"
       },
       {
-        kind: "set_active",
-        targetPath: "UnityAiBatchRoot/UnityAiBatchRenamed",
-        active: false
+        kind: "add_component",
+        targetPath: "UnityAiBatchRoot/UnityAiE2ECube",
+        componentType: "UnityAiReferenceFixture"
+      },
+      {
+        kind: "set_property",
+        targetPath: "UnityAiBatchRoot/UnityAiE2ECube",
+        componentType: "UnityAiReferenceFixture",
+        propertyPath: "targetObject",
+        value: {
+          kind: "game_object_reference",
+          path: "UnityAiBatchRoot/UnityAiBatchRenamed"
+        }
+      },
+      {
+        kind: "set_property",
+        targetPath: "UnityAiBatchRoot/UnityAiE2ECube",
+        componentType: "UnityAiReferenceFixture",
+        propertyPath: "targetBody",
+        value: {
+          kind: "component_reference",
+          path: "UnityAiBatchRoot/UnityAiBatchRenamed",
+          componentType: "UnityEngine.Rigidbody",
+          componentIndex: 0
+        }
       },
       {
         kind: "instantiate_prefab",
@@ -1134,7 +1307,7 @@ async function assertSceneBatchFlow(client) {
     forbiddenSignals: []
   });
 
-  if (applied.appliedOperationCount !== 9 || !Array.isArray(applied.operations) || applied.operations.some((operation) => operation.applied !== true || operation.verified !== true)) {
+  if (applied.appliedOperationCount !== 11 || !Array.isArray(applied.operations) || applied.operations.some((operation) => operation.applied !== true || operation.verified !== true)) {
     fail(`real scene batch did not verify all operations: ${JSON.stringify(applied.operations)}.`);
   }
 
@@ -1145,6 +1318,83 @@ async function assertSceneBatchFlow(client) {
     maxPropertyDepth: 8
   });
   assertGameObjectInspection(inspected);
+  assertReferenceBinding(inspected);
+
+  const filtered = await callJsonTool(client, "unity.scene.inspect", {
+    includeComponents: true,
+    maxDepth: 10,
+    maxGameObjects: 10,
+    filter: {
+      pathPrefix: "UnityAiBatchRoot",
+      componentType: "UnityEngine.Rigidbody",
+      withinRadius: {
+        centerPath: "UnityAiBatchRoot/UnityAiE2ECube",
+        radius: 0.1
+      }
+    }
+  });
+  if (filtered.filtered !== true
+      || filtered.returnedGameObjectCount !== 2
+      || filtered.matchedGameObjectCount !== 2
+      || filtered.gameObjects.some((item) => !item.components.includes("Rigidbody") || item.distanceFromFilterCenter > 0.1)) {
+    fail(`filtered scene inspection did not return the two colocated rigidbodies: ${JSON.stringify(filtered)}.`);
+  }
+
+  const physics = await callJsonTool(client, "unity.physics.inspect", {
+    pathPrefix: "UnityAiBatchRoot",
+    includeInactive: true,
+    dimension: "3d",
+    includeOverlapDiagnostics: true,
+    maxObjects: 20,
+    maxOverlaps: 20
+  });
+  if (physics.returnedPhysicsObjectCount < 2
+      || !Array.isArray(physics.objects)
+      || physics.objects.filter((item) => item.hasBody3D === true && item.body3D?.dimension === "3d").length < 2
+      || physics.detectedOverlapCount < 1
+      || !Array.isArray(physics.overlaps)
+      || !physics.overlaps.some((overlap) => overlap.dimension === "3d" && overlap.relativeNormalSpeed >= 0)) {
+    fail(`physics inspection did not expose bodies and overlap diagnostics: ${JSON.stringify(physics)}.`);
+  }
+
+  const telemetry = await callJsonTool(client, "unity.runtime.telemetry", {
+    pathPrefix: "UnityAiBatchRoot",
+    includeInactive: true,
+    includeRenderers: true,
+    includeColliders: true,
+    includeRigidbodies: true,
+    maxObjects: 20
+  });
+  if (!Array.isArray(telemetry.verificationSignals)
+      || !telemetry.verificationSignals.includes("runtime_telemetry_captured")
+      || telemetry.returnedGameObjectCount < 2
+      || !Array.isArray(telemetry.objects)
+      || !telemetry.objects.some((item) => item.path === "UnityAiBatchRoot/UnityAiE2ECube" && item.body3D?.dimension === "3d")
+      || !telemetry.objects.some((item) => item.rendererBounds != null || item.colliderBounds != null)) {
+    fail(`runtime telemetry did not expose bounded object telemetry: ${JSON.stringify(telemetry)}.`);
+  }
+
+  const deactivated = await callJsonTool(client, "unity.scene.batch", {
+    dryRun: false,
+    confirm: true,
+    operations: [
+      {
+        kind: "set_active",
+        targetPath: "UnityAiBatchRoot/UnityAiBatchRenamed",
+        active: false
+      }
+    ]
+  });
+  assertSceneBatchResult("scene batch deactivation", deactivated, {
+    dryRun: false,
+    applied: true,
+    rolledBack: false,
+    verificationStatus: "passed",
+    requiresConfirmation: false,
+    effects: ["scene_change", "write_audit_log"],
+    requiredSignals: ["batch_applied", "scene_mutation_verified"],
+    forbiddenSignals: []
+  });
 
   scene = await callJsonTool(client, "unity.scene.inspect", { includeComponents: true, maxDepth: 6, maxGameObjects: 200 });
   const renamedCopy = findSceneObject(scene, "UnityAiBatchRoot/UnityAiBatchRenamed");
@@ -1199,6 +1449,11 @@ async function assertSceneBatchFlow(client) {
         kind: "remove_component",
         targetPath: "UnityAiBatchRoot/UnityAiE2ECube",
         componentType: "UnityEngine.Rigidbody"
+      },
+      {
+        kind: "remove_component",
+        targetPath: "UnityAiBatchRoot/UnityAiE2ECube",
+        componentType: "UnityAiReferenceFixture"
       },
       { kind: "delete", targetPath: "UnityAiBatchRoot/UnityAiBatchRenamed" },
       { kind: "delete", targetPath: "UnityAiBatchRoot/UnityAiBatchPrefab" }
@@ -1286,6 +1541,24 @@ function assertGameObjectInspection(report) {
   assertNoAbsolutePathLeakInValue("game object inspection", report);
 }
 
+function assertReferenceBinding(report) {
+  const fixture = report.components.find((component) => component.fullTypeName === "UnityAiReferenceFixture");
+  if (!fixture || !Array.isArray(fixture.properties)) {
+    fail("scene reference fixture component was not inspectable.");
+  }
+
+  const targetObject = fixture.properties.find((property) => property.path === "targetObject");
+  const targetBody = fixture.properties.find((property) => property.path === "targetBody");
+  if (targetObject?.objectReferenceKind !== "game_object"
+      || targetObject.objectReferencePath !== "UnityAiBatchRoot/UnityAiBatchRenamed"
+      || targetBody?.objectReferenceKind !== "component"
+      || targetBody.objectReferencePath !== "UnityAiBatchRoot/UnityAiBatchRenamed"
+      || targetBody.objectReferenceComponentType !== "UnityEngine.Rigidbody"
+      || targetBody.objectReferenceComponentIndex !== 0) {
+    fail(`serialized scene references were not bound or reported correctly: ${JSON.stringify(fixture.properties)}.`);
+  }
+}
+
 async function assertVisualVerificationFlow(client) {
   const refusedAbsolutePath = await callJsonTool(client, "unity.vision.compare", {
     beforePath: "/tmp/unity-ai-before.png",
@@ -1330,6 +1603,141 @@ async function assertVisualVerificationFlow(client) {
   if (regression.changedPixelRatio < 0.99 || regression.meanAbsoluteError <= 0.1) {
     fail(`visual regression metrics were unexpectedly weak: ${JSON.stringify(regression)}.`);
   }
+
+  return { baseline };
+}
+
+async function assertAuditReportFlow(client, mutation, baseline) {
+  const invalidEvidenceReport = await callJsonTool(client, "unity.audit.report", {
+    title: "Reject absolute audit evidence",
+    evidence: [
+      {
+        phase: "before",
+        kind: "screenshot",
+        path: "/tmp/unity-ai-audit-evidence.png"
+      }
+    ],
+    verifications: [
+      {
+        signal: "screenshot_ready",
+        status: "passed",
+        evidencePaths: ["/tmp/unity-ai-audit-evidence.png"]
+      }
+    ]
+  });
+  if (invalidEvidenceReport.generated !== true
+      || invalidEvidenceReport.status !== "failed"
+      || invalidEvidenceReport.evidence?.[0]?.path !== ""
+      || invalidEvidenceReport.evidence?.[0]?.available !== false
+      || invalidEvidenceReport.verifications?.[0]?.evidenceReferencesValid !== false) {
+    fail(`audit report did not safely reject absolute evidence paths: ${JSON.stringify(invalidEvidenceReport)}.`);
+  }
+  assertNoAbsolutePathLeakInValue("audit report absolute path refusal", invalidEvidenceReport);
+
+  const after = await callJsonTool(client, "unity.vision.capture", {
+    source: "game",
+    width: 160,
+    height: 90,
+    label: "after-audited-create",
+    cameraPath: "UnityAiE2EVisualCamera"
+  });
+  assertReadyScreenshot("audit report after evidence", after, 160, 90);
+
+  const comparison = await callJsonTool(client, "unity.vision.compare", {
+    beforePath: baseline.path,
+    afterPath: after.path,
+    pixelThreshold: 0.01,
+    maxChangedPixelRatio: 0,
+    maxMeanAbsoluteError: 0,
+    generateDiff: true,
+    label: "audited-create"
+  });
+  assertVisualComparison("audit report visual comparison", comparison, false);
+
+  const report = await callJsonTool(client, "unity.audit.report", {
+    title: "Unity AI E2E create verification",
+    summary: "Verify one controlled scene mutation with hashed before and after visual evidence.",
+    requestIds: [mutation.requestId],
+    requireBeforeAfter: true,
+    evidence: [
+      {
+        phase: "before",
+        kind: "screenshot",
+        path: baseline.path,
+        description: "Game View before the controlled scene mutation."
+      },
+      {
+        phase: "after",
+        kind: "screenshot",
+        path: after.path,
+        description: "Game View after the controlled scene mutation."
+      },
+      {
+        phase: "supporting",
+        kind: "visual_diff",
+        path: comparison.diffPath,
+        description: "Generated visual diff for the before and after captures."
+      }
+    ],
+    verifications: [
+      {
+        signal: "scene_mutation_verified",
+        status: "passed",
+        summary: "The controlled create operation reported a verified scene mutation."
+      },
+      {
+        signal: "visual_regression_absent",
+        status: "passed",
+        summary: "The empty GameObject did not alter the rendered Game View.",
+        evidencePaths: [baseline.path, after.path, comparison.diffPath]
+      }
+    ]
+  });
+
+  if (report.generated !== true || report.status !== "passed" || report.beforeAfterComplete !== true || report.reportFilesVerified !== true) {
+    fail(`audit report did not produce a passed, verified before/after report: ${JSON.stringify(report)}.`);
+  }
+
+  if (report.matchedAuditEvents !== 1 || report.auditEvents?.[0]?.requestId !== mutation.requestId) {
+    fail(`audit report did not select the requested mutation event: ${JSON.stringify(report.auditEvents)}.`);
+  }
+
+  if (!Array.isArray(report.evidence) || report.evidence.length !== 3 || report.evidence.some((item) => item.available !== true || !/^[a-f0-9]{64}$/.test(item.sha256))) {
+    fail(`audit report evidence metadata was invalid: ${JSON.stringify(report.evidence)}.`);
+  }
+
+  if (!Array.isArray(report.verifications) || report.verifications.some((item) => item.evidenceReferencesValid !== true)) {
+    fail(`audit report verification references were invalid: ${JSON.stringify(report.verifications)}.`);
+  }
+
+  for (const field of ["reportJsonPath", "reportMarkdownPath"]) {
+    if (typeof report[field] !== "string" || !report[field].startsWith("UnityAIArtifacts/Audit/Reports/") || !existsSync(join(tempProject, report[field]))) {
+      fail(`audit report ${field} was invalid: ${report[field]}.`);
+    }
+  }
+
+  if (sha256File(join(tempProject, report.reportJsonPath)) !== report.reportJsonSha256
+      || sha256File(join(tempProject, report.reportMarkdownPath)) !== report.reportMarkdownSha256) {
+    fail("audit report artifact hashes did not match the written files.");
+  }
+
+  const reportDocument = JSON.parse(readFileSync(join(tempProject, report.reportJsonPath), "utf8"));
+  if (reportDocument.reportId !== report.reportId || reportDocument.status !== "passed" || reportDocument.beforeAfterComplete !== true) {
+    fail(`audit report JSON document was invalid: ${JSON.stringify(reportDocument)}.`);
+  }
+
+  if (report.auditPersisted !== true || report.auditEvent?.capability !== "unity.audit.report") {
+    fail(`audit report generation was not persisted to the audit log: ${JSON.stringify(report.auditEvent)}.`);
+  }
+  assertAuditLogContains("audit report generation", join(tempProject, report.auditLogPath), report.auditEvent);
+
+  for (const signal of ["audit_report_generated", "evidence_hash_verified", "operation_audited", "structured_observation"]) {
+    if (!report.verificationSignals?.includes(signal)) {
+      fail(`audit report did not return verification signal ${signal}.`);
+    }
+  }
+
+  assertNoAbsolutePathLeakInValue("audit report", report);
 }
 
 async function assertExtendedControlPlaneFlow(client) {
@@ -1372,7 +1780,11 @@ async function assertExtendedControlPlaneFlow(client) {
     fail(`compilation wait job failed: ${JSON.stringify(compilationJob)}.`);
   }
 
-  await assertAssetAuthoringFlow(client);
+  const authoredAssets = await assertAssetAuthoringFlow(client);
+  await assertAssetImportFlow(client, authoredAssets);
+  await assertAssetCatalogFlow(client);
+  await assertScriptAuthoringFlow(client);
+  await assertGameplayComposeFlow(client);
   await assertDurableCheckpointFlow(client);
   await assertPrefabManagementFlow(client);
   await assertTestRun(client, "edit", "UnityAiE2E.EditMode");
@@ -1427,6 +1839,27 @@ async function assertAssetAuthoringFlow(client) {
     ]
   });
   assertAssetAuthored("animation", animation, "UnityEngine.AnimationClip");
+  const animationPath = animation.path;
+
+  const controller = await callJsonTool(client, "unity.assets.author", {
+    dryRun: false,
+    confirm: true,
+    kind: "animator_controller",
+    path: "Assets/UnityAiGenerated/E2E.controller",
+    defaultState: "Move",
+    animatorParameters: [
+      { name: "Enabled", type: "bool", defaultBool: true }
+    ],
+    animatorStates: [
+      {
+        name: "Move",
+        clipPath: animationPath,
+        speed: 1,
+        writeDefaultValues: true
+      }
+    ]
+  });
+  assertAssetAuthored("animator controller", controller, "UnityEditor.Animations.AnimatorController");
 
   const audio = await callJsonTool(client, "unity.assets.author", {
     dryRun: false,
@@ -1447,6 +1880,11 @@ async function assertAssetAuthoringFlow(client) {
     }
   });
   assertAssetAuthored("audio", audio, "UnityEngine.AudioClip");
+
+  return {
+    animationPath,
+    controllerPath: controller.path
+  };
 }
 
 function assertAssetAuthored(label, result, expectedType) {
@@ -1457,6 +1895,471 @@ function assertAssetAuthored(label, result, expectedType) {
   if (!existsSync(join(tempProject, result.path))) {
     fail(`${label} asset was not created at ${result.path}.`);
   }
+}
+
+async function assertAssetImportFlow(client, authoredAssets) {
+  const localDestination = "Assets/UnityAiGenerated/ImportedLocalTriangle.obj";
+  const importedPrefabPath = "Assets/UnityAiGenerated/ImportedLocalTriangle.prefab";
+  const local = await callJsonTool(client, "unity.assets.import", {
+    dryRun: false,
+    confirm: true,
+    sourceKind: "local",
+    sourcePath: localModelSourcePath,
+    destinationPath: localDestination,
+    expectedSha256: sha256File(localModelSourcePath),
+    model: {
+      globalScale: 1.5,
+      useFileScale: true,
+      addCollider: true,
+      importAnimation: false,
+      animationType: "none",
+      meshCompression: "low"
+    },
+    instantiate: true,
+    objectName: "ImportedLocalTriangle",
+    transform: {
+      position: { x: 0, y: 0, z: 2 },
+      rotationEuler: { x: 0, y: 30, z: 0 },
+      scale: { x: 1, y: 1, z: 1 }
+    },
+    saveAsPrefabPath: importedPrefabPath
+  });
+  assertImportedAsset("local model import", local, {
+    sourceKind: "local",
+    destinationPath: localDestination,
+    assetType: "UnityEngine.GameObject",
+    importerType: "UnityEditor.ModelImporter",
+    instantiated: true,
+    prefabCreated: true
+  });
+
+  const remoteDestination = "Assets/UnityAiGenerated/ImportedRemoteTriangle.obj";
+  const remote = await callJsonTool(client, "unity.assets.import", {
+    dryRun: false,
+    confirm: true,
+    sourceKind: "url",
+    url: remoteModelUrl,
+    allowInsecureLocalhost: true,
+    destinationPath: remoteDestination,
+    expectedSha256: createHash("sha256").update(remoteObjSource).digest("hex"),
+    model: {
+      globalScale: 0.75,
+      importAnimation: false,
+      animationType: "none"
+    }
+  });
+  assertImportedAsset("remote model import", remote, {
+    sourceKind: "url",
+    destinationPath: remoteDestination,
+    assetType: "UnityEngine.GameObject",
+    importerType: "UnityEditor.ModelImporter",
+    instantiated: false,
+    prefabCreated: false
+  });
+
+  const composed = await callJsonTool(client, "unity.scene.batch", {
+    dryRun: false,
+    confirm: true,
+    operations: [
+      {
+        kind: "add_component",
+        targetPath: local.objectPath,
+        componentType: "UnityEngine.Animator"
+      },
+      {
+        kind: "set_property",
+        targetPath: local.objectPath,
+        componentType: "UnityEngine.Animator",
+        propertyPath: "m_Controller",
+        value: { kind: "object_reference", assetPath: authoredAssets.controllerPath }
+      },
+      {
+        kind: "add_component",
+        targetPath: local.objectPath,
+        componentType: "UnityAI.ControlPlane.Runtime.ContinuousRotation"
+      },
+      {
+        kind: "set_property",
+        targetPath: local.objectPath,
+        componentType: "UnityAI.ControlPlane.Runtime.ContinuousRotation",
+        propertyPath: "axis",
+        value: { kind: "vector3", x: 0, y: 1, z: 0 }
+      },
+      {
+        kind: "set_property",
+        targetPath: local.objectPath,
+        componentType: "UnityAI.ControlPlane.Runtime.ContinuousRotation",
+        propertyPath: "degreesPerSecond",
+        value: { kind: "number", numberValue: 90 }
+      }
+    ]
+  });
+  if (composed.applied !== true || !composed.verificationSignals?.includes("component_state_verified")) {
+    fail(`imported model composition failed: ${JSON.stringify(composed)}.`);
+  }
+
+  const inspected = await callJsonTool(client, "unity.scene.inspect_game_object", {
+    path: local.objectPath,
+    includeProperties: true,
+    maxProperties: 500,
+    maxPropertyDepth: 8
+  });
+  const animator = inspected.components?.find((component) => component.fullTypeName === "UnityEngine.Animator");
+  const rotation = inspected.components?.find((component) => component.fullTypeName === "UnityAI.ControlPlane.Runtime.ContinuousRotation");
+  if (!animator || !rotation) {
+    fail(`imported model did not contain Animator and ContinuousRotation: ${JSON.stringify(inspected.components)}.`);
+  }
+
+  const controllerProperty = animator.properties?.find((property) => property.path === "m_Controller");
+  const speedProperty = rotation.properties?.find((property) => property.path === "degreesPerSecond");
+  if (controllerProperty?.objectReferencePath !== authoredAssets.controllerPath || Math.abs(Number(speedProperty?.value) - 90) > 0.001) {
+    fail(`imported model functionality was not serialized correctly: ${JSON.stringify({ controllerProperty, speedProperty })}.`);
+  }
+}
+
+async function assertAssetCatalogFlow(client) {
+  const search = await callJsonTool(client, "unity.assets.catalog.search", {
+    query: "remote triangle",
+    kind: "model",
+    maxResults: 20,
+    refresh: true
+  });
+  const catalogAsset = search.assets?.find((asset) => asset.assetId === "unity-ai-e2e:remote-triangle");
+  const expectedHash = createHash("sha256").update(remoteObjSource).digest("hex");
+  if (!catalogAsset
+      || catalogAsset.license?.spdxId !== "CC0-1.0"
+      || catalogAsset.sha256 !== expectedHash
+      || catalogAsset.format !== "obj") {
+    fail(`catalog search did not return verified fixture metadata: ${JSON.stringify(search)}.`);
+  }
+
+  const destinationPath = "Assets/UnityAiGenerated/ImportedCatalogTriangle.obj";
+  const preview = await callJsonTool(client, "unity.assets.import_from_catalog", {
+    catalogAssetId: catalogAsset.assetId,
+    expectedCatalogSha256: expectedHash,
+    destinationPath,
+    model: {
+      globalScale: 1,
+      importAnimation: false,
+      animationType: "none"
+    }
+  });
+  if (preview.dryRun !== true
+      || preview.catalogProvenance?.catalogAssetId !== catalogAsset.assetId
+      || preview.catalogAsset?.sha256 !== expectedHash) {
+    fail(`catalog import preview was invalid: ${JSON.stringify(preview)}.`);
+  }
+
+  const imported = await callJsonTool(client, "unity.assets.import_from_catalog", {
+    dryRun: false,
+    confirm: true,
+    catalogAssetId: catalogAsset.assetId,
+    expectedCatalogSha256: expectedHash,
+    destinationPath,
+    model: {
+      globalScale: 1,
+      importAnimation: false,
+      animationType: "none"
+    }
+  });
+  assertImportedAsset("catalog model import", imported, {
+    sourceKind: "url",
+    destinationPath,
+    assetType: "UnityEngine.GameObject",
+    importerType: "UnityEditor.ModelImporter",
+    instantiated: false,
+    prefabCreated: false,
+    auditCapability: "unity.assets.import_from_catalog"
+  });
+
+  for (const signal of ["asset_license_verified", "asset_hash_verified"]) {
+    if (!imported.verificationSignals?.includes(signal)) {
+      fail(`catalog model import did not include verification signal ${signal}.`);
+    }
+  }
+
+  if (imported.catalogProvenance?.licenseSpdxId !== "CC0-1.0"
+      || imported.catalogProvenance?.catalogAssetId !== catalogAsset.assetId
+      || imported.catalogAsset?.sourceUrl !== "https://example.com/unity-ai-e2e/remote-triangle") {
+    fail(`catalog model import did not retain provenance: ${JSON.stringify(imported)}.`);
+  }
+}
+
+async function assertScriptAuthoringFlow(client) {
+  const unsafePreview = await callJsonTool(client, "unity.scripts.author", {
+    path: "Assets/UnityAiGenerated/UnsafeGenerated.cs",
+    source: `using System.IO;
+using UnityEngine;
+
+public sealed class UnsafeGenerated : MonoBehaviour
+{
+    private void Update()
+    {
+        File.Delete("forbidden");
+    }
+}
+`,
+    expectedClassName: "UnsafeGenerated"
+  });
+  if (unsafePreview.refused !== true || !String(unsafePreview.message).includes("blocked API")) {
+    fail(`unsafe generated script was not refused: ${JSON.stringify(unsafePreview)}.`);
+  }
+
+  const brokenSource = `using UnityEngine;
+
+public sealed class BrokenGenerated : MonoBehaviour
+{
+    private void Update()
+    {
+        transform.position = ;
+    }
+}
+`;
+  const brokenPath = "Assets/UnityAiGenerated/BrokenGenerated.cs";
+  const brokenPreview = await callJsonTool(client, "unity.scripts.author", {
+    path: brokenPath,
+    source: brokenSource,
+    expectedClassName: "BrokenGenerated"
+  });
+  if (brokenPreview.refused === true || !/^[a-f0-9]{64}$/.test(brokenPreview.sourceSha256)) {
+    fail(`compile-failure fixture did not pass source policy validation: ${JSON.stringify(brokenPreview)}.`);
+  }
+
+  const brokenJob = await waitForJob(client, await callJsonTool(client, "unity.scripts.author", {
+    dryRun: false,
+    confirm: true,
+    path: brokenPath,
+    source: brokenSource,
+    expectedSourceSha256: brokenPreview.sourceSha256,
+    expectedClassName: "BrokenGenerated"
+  }), 180_000);
+  const brokenResult = parseJobResult(brokenJob);
+  if (brokenJob.status !== "failed"
+      || brokenResult.rolledBack !== true
+      || existsSync(join(tempProject, brokenPath))
+      || !brokenJob.verificationSignals?.includes("checkpoint_restored")) {
+    fail(`generated script compile failure did not restore its checkpoint: ${JSON.stringify(brokenJob)}.`);
+  }
+
+  const source = `using UnityEngine;
+
+namespace UnityAi.Generated
+{
+    public sealed class GeneratedRise : MonoBehaviour
+    {
+        public float unitsPerSecond = 1f;
+
+        private void Update()
+        {
+            transform.Translate(Vector3.up * unitsPerSecond * Time.deltaTime, Space.World);
+        }
+    }
+}
+`;
+  const path = "Assets/UnityAiGenerated/GeneratedRise.cs";
+  const preview = await callJsonTool(client, "unity.scripts.author", {
+    path,
+    source,
+    expectedClassName: "GeneratedRise",
+    expectedNamespace: "UnityAi.Generated",
+    attachToObjectPath: "ImportedLocalTriangle"
+  });
+  if (preview.dryRun !== true
+      || preview.refused === true
+      || !/^[a-f0-9]{64}$/.test(preview.sourceSha256)
+      || !preview.verificationSignals?.includes("script_source_validated")) {
+    fail(`generated script dry run was invalid: ${JSON.stringify(preview)}.`);
+  }
+
+  const started = await callJsonTool(client, "unity.scripts.author", {
+    dryRun: false,
+    confirm: true,
+    path,
+    source,
+    expectedSourceSha256: preview.sourceSha256,
+    expectedClassName: "GeneratedRise",
+    expectedNamespace: "UnityAi.Generated",
+    attachToObjectPath: "ImportedLocalTriangle"
+  });
+  const job = await waitForJob(client, started, 180_000);
+  const result = parseJobResult(job);
+  if (job.status !== "succeeded"
+      || result.compiled !== true
+      || result.attached !== true
+      || result.fullTypeName !== "UnityAi.Generated.GeneratedRise"
+      || result.targetCompilerErrorCount !== 0
+      || !existsSync(join(tempProject, path))) {
+    fail(`generated script compilation or attachment failed: ${JSON.stringify(job)}.`);
+  }
+
+  for (const signal of ["script_source_validated", "script_compilation_verified", "component_state_verified", "scene_mutation_verified"]) {
+    if (!job.verificationSignals?.includes(signal)) {
+      fail(`generated script job did not include verification signal ${signal}.`);
+    }
+  }
+
+  const inspected = await callJsonTool(client, "unity.scene.inspect_game_object", {
+    path: "ImportedLocalTriangle",
+    includeProperties: true,
+    maxProperties: 500,
+    maxPropertyDepth: 8
+  });
+  const generated = inspected.components?.find((component) => component.fullTypeName === "UnityAi.Generated.GeneratedRise");
+  const speedProperty = generated?.properties?.find((property) => property.path === "unitsPerSecond");
+  if (!generated || Math.abs(Number(speedProperty?.value) - 1) > 0.001) {
+    fail(`generated runtime component was not serialized correctly: ${JSON.stringify({ generated, speedProperty })}.`);
+  }
+}
+
+async function assertGameplayComposeFlow(client) {
+  const objects = [
+    { name: "GameplayInteractor", primitive: "sphere", position: { x: 20, y: 0, z: 0 }, active: true },
+    { name: "GameplayDoor", primitive: "cube", position: { x: 20, y: 0, z: 1 }, active: true },
+    { name: "GameplayPickup", primitive: "sphere", position: { x: 20, y: 0, z: 1.5 }, active: true },
+    { name: "GameplayActivator", primitive: "empty", position: { x: 20, y: 0, z: 1 }, active: true },
+    { name: "GameplaySignal", primitive: "cube", position: { x: 22, y: 0, z: 0 }, active: false }
+  ];
+
+  for (const object of objects) {
+    const created = await callJsonTool(client, "unity.scene.upsert_game_object", {
+      dryRun: false,
+      confirm: true,
+      mode: "create",
+      name: object.name,
+      primitive: object.primitive,
+      transform: { position: object.position },
+      active: object.active
+    });
+    if (created.created !== true || created.verificationStatus !== "passed") {
+      fail(`gameplay fixture object ${object.name} was not created: ${JSON.stringify(created)}.`);
+    }
+  }
+
+  const templates = [
+    {
+      kind: "door",
+      targetPath: "GameplayDoor",
+      interactorPath: "GameplayInteractor",
+      activationDistance: 3,
+      deactivationDistance: 4,
+      openOffset: { x: 0, y: 2, z: 0 },
+      speed: 4,
+      startsOpen: false,
+      closeWhenOutOfRange: true
+    },
+    {
+      kind: "pickup",
+      targetPath: "GameplayPickup",
+      interactorPath: "GameplayInteractor",
+      activationDistance: 3,
+      pickupId: "e2e-crystal",
+      value: 25,
+      collectAction: "deactivate",
+      spinAxis: { x: 0, y: 1, z: 0 },
+      spinDegreesPerSecond: 120,
+      bobAmplitude: 0.2,
+      bobFrequency: 1
+    },
+    {
+      kind: "activator",
+      targetPath: "GameplayActivator",
+      interactorPath: "GameplayInteractor",
+      activationDistance: 3,
+      affectedPaths: ["GameplaySignal"],
+      action: "activate",
+      oneShot: true,
+      revertOnExit: false
+    }
+  ];
+
+  const preview = await callJsonTool(client, "unity.gameplay.compose", { templates });
+  if (preview.dryRun !== true
+      || preview.applied !== false
+      || preview.templates?.length !== 3
+      || preview.verificationStatus !== "passed") {
+    fail(`gameplay composition dry run was invalid: ${JSON.stringify(preview)}.`);
+  }
+
+  const applied = await callJsonTool(client, "unity.gameplay.compose", {
+    dryRun: false,
+    confirm: true,
+    templates
+  });
+  if (applied.applied !== true
+      || applied.appliedTemplateCount !== 3
+      || !applied.checkpointId
+      || applied.templates?.some((template) => template.applied !== true || template.verified !== true)
+      || applied.auditPersisted !== true) {
+    fail(`gameplay composition failed: ${JSON.stringify(applied)}.`);
+  }
+
+  for (const signal of ["checkpoint_created", "gameplay_template_applied", "component_state_verified", "scene_mutation_verified", "operation_audited"]) {
+    if (!applied.verificationSignals?.includes(signal)) {
+      fail(`gameplay composition did not include verification signal ${signal}.`);
+    }
+  }
+
+  const expectedComponents = [
+    ["GameplayDoor", "UnityAI.ControlPlane.Runtime.ProximityDoor"],
+    ["GameplayPickup", "UnityAI.ControlPlane.Runtime.ProximityPickup"],
+    ["GameplayActivator", "UnityAI.ControlPlane.Runtime.ProximityActivator"]
+  ];
+  for (const [path, componentType] of expectedComponents) {
+    const inspected = await callJsonTool(client, "unity.scene.inspect_game_object", {
+      path,
+      includeProperties: true,
+      maxProperties: 500,
+      maxPropertyDepth: 8
+    });
+    if (!inspected.found || !inspected.components?.some((component) => component.fullTypeName === componentType)) {
+      fail(`gameplay component ${componentType} was not configured on ${path}: ${JSON.stringify(inspected)}.`);
+    }
+
+    if (path === "GameplayActivator") {
+      const activator = inspected.components.find((component) => component.fullTypeName === componentType);
+      const targetReference = activator.properties?.find((property) => property.path === "targets.Array.data[0]");
+      if (targetReference?.value !== "GameplaySignal") {
+        fail(`gameplay activator target reference was not serialized: ${JSON.stringify(activator)}.`);
+      }
+    }
+  }
+}
+
+function assertImportedAsset(label, result, expected) {
+  if (result.imported !== true
+      || result.verificationStatus !== "passed"
+      || result.sourceKind !== expected.sourceKind
+      || result.destinationPath !== expected.destinationPath
+      || result.assetType !== expected.assetType
+      || result.importerType !== expected.importerType
+      || result.instantiated !== expected.instantiated
+      || result.prefabCreated !== expected.prefabCreated) {
+    fail(`${label} failed: ${JSON.stringify(result)}.`);
+  }
+
+  if (!result.checkpointId || !/^[a-f0-9]{64}$/.test(result.sha256) || !existsSync(join(tempProject, result.destinationPath))) {
+    fail(`${label} did not return verified checkpoint/hash/file metadata.`);
+  }
+
+  for (const signal of ["checkpoint_created", "asset_import_verified", "operation_audited"]) {
+    if (!result.verificationSignals?.includes(signal)) {
+      fail(`${label} did not include verification signal ${signal}.`);
+    }
+  }
+
+  if (expected.instantiated && (!result.objectPath || !result.verificationSignals.includes("scene_mutation_verified"))) {
+    fail(`${label} did not verify scene instantiation.`);
+  }
+
+  if (expected.prefabCreated && (!existsSync(join(tempProject, result.prefabPath)) || !result.verificationSignals.includes("prefab_mutation_verified"))) {
+    fail(`${label} did not verify prefab creation.`);
+  }
+
+  if (result.auditPersisted !== true || result.auditEvent?.capability !== (expected.auditCapability ?? "unity.assets.import")) {
+    fail(`${label} did not persist its audit event.`);
+  }
+  assertAuditLogContains(label, join(tempProject, result.auditLogPath), result.auditEvent);
+  assertNoAbsolutePathLeakInValue(label, result);
 }
 
 async function assertDurableCheckpointFlow(client) {
@@ -1620,6 +2523,22 @@ async function assertPlayModeControlFlow(client) {
     fail("Play Mode should be stopped before control flow.");
   }
 
+  const behaviorBefore = await callJsonTool(client, "unity.scene.inspect_game_object", {
+    path: "ImportedLocalTriangle",
+    includeProperties: false
+  });
+  const doorBefore = await callJsonTool(client, "unity.scene.inspect_game_object", {
+    path: "GameplayDoor",
+    includeProperties: false
+  });
+  const pickupBefore = await callJsonTool(client, "unity.scene.inspect_game_object", {
+    path: "GameplayPickup",
+    includeProperties: false
+  });
+  const signalBefore = await callJsonTool(client, "unity.scene.inspect_game_object", {
+    path: "GameplaySignal",
+    includeProperties: false
+  });
   const entered = await waitForJob(client, await callJsonTool(client, "unity.playmode.control", {
     dryRun: false,
     confirm: true,
@@ -1627,6 +2546,39 @@ async function assertPlayModeControlFlow(client) {
   }), 120_000);
   if (entered.status !== "succeeded") {
     fail(`enter Play Mode failed: ${JSON.stringify(entered)}.`);
+  }
+
+  await delay(750);
+  const behaviorAfter = await callJsonTool(client, "unity.scene.inspect_game_object", {
+    path: "ImportedLocalTriangle",
+    includeProperties: false
+  });
+  const doorAfter = await callJsonTool(client, "unity.scene.inspect_game_object", {
+    path: "GameplayDoor",
+    includeProperties: false
+  });
+  const pickupAfter = await callJsonTool(client, "unity.scene.inspect_game_object", {
+    path: "GameplayPickup",
+    includeProperties: false
+  });
+  const signalAfter = await callJsonTool(client, "unity.scene.inspect_game_object", {
+    path: "GameplaySignal",
+    includeProperties: false
+  });
+  if (!behaviorBefore.found || !behaviorAfter.found || angleDelta(behaviorBefore.rotationEuler?.y, behaviorAfter.rotationEuler?.y) < 1) {
+    fail(`ContinuousRotation did not visibly update the imported object in Play Mode: ${JSON.stringify({ behaviorBefore, behaviorAfter })}.`);
+  }
+  if (Number(behaviorAfter.position?.y) - Number(behaviorBefore.position?.y) < 0.1) {
+    fail(`GeneratedRise did not visibly move the imported object in Play Mode: ${JSON.stringify({ behaviorBefore, behaviorAfter })}.`);
+  }
+  if (!doorBefore.found || !doorAfter.found || Number(doorAfter.position?.y) - Number(doorBefore.position?.y) < 0.5) {
+    fail(`ProximityDoor did not visibly open in Play Mode: ${JSON.stringify({ doorBefore, doorAfter })}.`);
+  }
+  if (!pickupBefore.found || pickupBefore.activeSelf !== true || !pickupAfter.found || pickupAfter.activeSelf !== false) {
+    fail(`ProximityPickup was not collected in Play Mode: ${JSON.stringify({ pickupBefore, pickupAfter })}.`);
+  }
+  if (!signalBefore.found || signalBefore.activeSelf !== false || !signalAfter.found || signalAfter.activeSelf !== true) {
+    fail(`ProximityActivator did not activate its target in Play Mode: ${JSON.stringify({ signalBefore, signalAfter })}.`);
   }
 
   for (const action of ["pause", "step", "resume"]) {
@@ -1992,6 +2944,24 @@ function assertProjectSettings(report) {
   }
 }
 
+function assertProjectInspect(report) {
+  if (!report?.renderPipeline || !["built_in", "urp", "hdrp", "custom"].includes(report.renderPipeline.kind)) {
+    fail(`unity.project.inspect returned an invalid render pipeline environment: ${JSON.stringify(report?.renderPipeline)}.`);
+  }
+
+  if (typeof report.renderPipeline.recommendedShader !== "string" || report.renderPipeline.recommendedShader.length === 0) {
+    fail("unity.project.inspect must expose a recommended shader for the effective render pipeline.");
+  }
+
+  if (!report?.inputSystem || !["legacy", "input_system", "both", "unknown"].includes(report.inputSystem.mode)) {
+    fail(`unity.project.inspect returned an invalid input system environment: ${JSON.stringify(report?.inputSystem)}.`);
+  }
+
+  if (typeof report.inputSystem.recommendedApi !== "string" || report.inputSystem.recommendedApi.length === 0 || !Array.isArray(report.compatibilityWarnings)) {
+    fail("unity.project.inspect must expose input API guidance and compatibility warnings.");
+  }
+}
+
 function assertProjectSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== "object") {
     fail("unity.project.snapshot returned an invalid snapshot shape.");
@@ -2038,6 +3008,10 @@ function assertProjectSnapshot(snapshot) {
     fail("unity.project.snapshot returned an invalid bounded packages summary.");
   }
 
+  if (!snapshot.environment?.renderPipeline || !snapshot.environment?.inputSystem || !Array.isArray(snapshot.environment.compatibilityWarnings)) {
+    fail(`unity.project.snapshot returned an invalid mandatory environment summary: ${JSON.stringify(snapshot.environment)}.`);
+  }
+
   if (!snapshot.metaXr || typeof snapshot.metaXr.likelyMetaXrInstalled !== "boolean" || !Array.isArray(snapshot.metaXr.findings) || snapshot.metaXr.findings.length > 10) {
     fail("unity.project.snapshot returned an invalid Meta XR summary.");
   }
@@ -2058,7 +3032,7 @@ function assertProjectSnapshot(snapshot) {
     fail(`unity.project.snapshot did not include fact-based recommended actions: ${JSON.stringify(snapshot.recommendedNextActions)}.`);
   }
 
-  if (!Array.isArray(snapshot.verificationSignals) || !snapshot.verificationSignals.includes("structured_observation") || !snapshot.verificationSignals.includes("console_diagnostics")) {
+  if (!Array.isArray(snapshot.verificationSignals) || !snapshot.verificationSignals.includes("structured_observation") || !snapshot.verificationSignals.includes("console_diagnostics") || !snapshot.verificationSignals.includes("environment_introspected")) {
     fail(`unity.project.snapshot did not include expected verification signals: ${JSON.stringify(snapshot.verificationSignals)}.`);
   }
 
@@ -2107,6 +3081,15 @@ function assertConsoleDiagnostics(report) {
     fail(`unity.console.diagnose diagnosticCount ${report.diagnosticCount} did not match diagnostics length ${report.diagnostics.length}.`);
   }
 
+  if (typeof report.blockingErrorCount !== "number"
+      || typeof report.nonBlockingIssueCount !== "number"
+      || typeof report.hasBlockingErrors !== "boolean"
+      || report.compilationErrorCount < 1
+      || report.runtimeErrorCount < 1
+      || report.hasBlockingErrors !== true) {
+    fail(`unity.console.diagnose did not expose strict blocking classifications: ${JSON.stringify(report)}.`);
+  }
+
   if (!findDiagnostic(report, diagnosticWarningMarker, "warning", "warning")) {
     fail("unity.console.diagnose did not map the deterministic warning fixture to severity=warning category=warning.");
   }
@@ -2119,12 +3102,21 @@ function assertConsoleDiagnostics(report) {
     fail("unity.console.diagnose did not map the deterministic exception fixture to severity=error category=runtime_exception.");
   }
 
+  const compilerDiagnostic = findDiagnostic(report, diagnosticErrorMarker, "error", "compiler_error");
+  const runtimeDiagnostic = findDiagnostic(report, diagnosticExceptionMarker, "error", "runtime_exception");
+  if (compilerDiagnostic.classification !== "CompilationError"
+      || compilerDiagnostic.blocking !== true
+      || runtimeDiagnostic.classification !== "RuntimeError"
+      || runtimeDiagnostic.blocking !== false) {
+    fail("unity.console.diagnose did not distinguish blocking compiler errors from non-blocking runtime errors.");
+  }
+
   for (const diagnostic of report.diagnostics) {
-    if (typeof diagnostic.category !== "string" || typeof diagnostic.severity !== "string" || typeof diagnostic.message !== "string" || typeof diagnostic.stackHint !== "string" || typeof diagnostic.functionHint !== "string" || typeof diagnostic.likelyRootCause !== "string" || typeof diagnostic.suggestedNextSafeAction !== "string") {
+    if (typeof diagnostic.category !== "string" || typeof diagnostic.classification !== "string" || typeof diagnostic.blocking !== "boolean" || typeof diagnostic.severity !== "string" || typeof diagnostic.message !== "string" || typeof diagnostic.stackHint !== "string" || typeof diagnostic.functionHint !== "string" || typeof diagnostic.likelyRootCause !== "string" || typeof diagnostic.suggestedNextSafeAction !== "string") {
       fail("unity.console.diagnose returned a diagnostic with missing string fields.");
     }
 
-    const diagnosticStringFields = ["category", "severity", "message", "file", "stackHint", "functionHint", "likelyRootCause", "suggestedNextSafeAction"];
+    const diagnosticStringFields = ["category", "classification", "severity", "message", "file", "stackHint", "functionHint", "likelyRootCause", "suggestedNextSafeAction"];
     for (const field of diagnosticStringFields) {
       assertNoAbsolutePathLeak(`diagnostic.${field}`, diagnostic[field]);
     }
@@ -2346,6 +3338,85 @@ function assertAuditLogContains(label, auditLogPath, expectedEvent) {
   }
 }
 
+function sha256File(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function startAssetFixtureServer(body) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const server = createServer((request, response) => {
+      if (request.url === "/catalog.json") {
+        const address = server.address();
+        if (!address || typeof address === "string") {
+          response.writeHead(500);
+          response.end("missing address");
+          return;
+        }
+
+        const manifest = JSON.stringify({
+          schemaVersion: 1,
+          catalog: {
+            id: "unity-ai-e2e",
+            name: "Unity AI E2E Catalog",
+            homepage: "https://example.com/unity-ai-e2e"
+          },
+          assets: [
+            {
+              id: "remote-triangle",
+              name: "Remote Triangle",
+              description: "Deterministic remote OBJ fixture",
+              kind: "model",
+              format: "obj",
+              tags: ["fixture", "triangle"],
+              downloadUrl: `http://127.0.0.1:${address.port}/remote-triangle.obj`,
+              sourceUrl: "https://example.com/unity-ai-e2e/remote-triangle",
+              sha256: createHash("sha256").update(body).digest("hex"),
+              sizeBytes: Buffer.byteLength(body),
+              license: {
+                spdxId: "CC0-1.0",
+                name: "CC0 1.0 Universal",
+                url: "https://creativecommons.org/publicdomain/zero/1.0/"
+              }
+            }
+          ]
+        });
+        response.writeHead(200, {
+          "content-type": "application/json",
+          "content-length": Buffer.byteLength(manifest)
+        });
+        response.end(manifest);
+        return;
+      }
+
+      if (request.url !== "/remote-triangle.obj") {
+        response.writeHead(404);
+        response.end("not found");
+        return;
+      }
+
+      response.writeHead(200, {
+        "content-type": "text/plain",
+        "content-length": Buffer.byteLength(body)
+      });
+      response.end(body);
+    });
+    server.once("error", rejectPromise);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        rejectPromise(new Error("Asset fixture server did not expose a TCP port."));
+        return;
+      }
+
+      resolvePromise({ server, port: address.port });
+    });
+  });
+}
+
+function closeServer(server) {
+  return new Promise((resolvePromise) => server.close(() => resolvePromise()));
+}
+
 async function waitForFile(path, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
 
@@ -2452,6 +3523,101 @@ async function assertMutatingRouteRequiresToken(url) {
   }
 
   console.log("✓ unity.console.apply_fix rejects missing token");
+
+  const assetImportResponse = await fetch(`${url}/capabilities/${encodeURIComponent("unity.assets.import")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      input: {
+        dryRun: false,
+        confirm: true,
+        sourceKind: "local",
+        sourcePath: localModelSourcePath,
+        destinationPath: "Assets/Unauthorized.obj"
+      }
+    })
+  });
+
+  if (assetImportResponse.status !== 403) {
+    fail(`Expected unity.assets.import without token to return 403, got HTTP ${assetImportResponse.status}.`);
+  }
+
+  console.log("✓ unity.assets.import rejects missing token");
+
+  const catalogImportResponse = await fetch(`${url}/capabilities/${encodeURIComponent("unity.assets.import_from_catalog")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      input: {
+        dryRun: false,
+        confirm: true,
+        sourceKind: "url",
+        url: remoteModelUrl,
+        destinationPath: "Assets/UnauthorizedCatalog.obj"
+      }
+    })
+  });
+
+  if (catalogImportResponse.status !== 403) {
+    fail(`Expected unity.assets.import_from_catalog without token to return 403, got HTTP ${catalogImportResponse.status}.`);
+  }
+
+  console.log("✓ unity.assets.import_from_catalog rejects missing token");
+
+  const scriptAuthoringResponse = await fetch(`${url}/capabilities/${encodeURIComponent("unity.scripts.author")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      input: {
+        dryRun: false,
+        confirm: true,
+        path: "Assets/Unauthorized.cs",
+        source: "public sealed class Unauthorized : UnityEngine.MonoBehaviour {}",
+        expectedSourceSha256: "0".repeat(64),
+        expectedClassName: "Unauthorized"
+      }
+    })
+  });
+
+  if (scriptAuthoringResponse.status !== 403) {
+    fail(`Expected unity.scripts.author without token to return 403, got HTTP ${scriptAuthoringResponse.status}.`);
+  }
+
+  console.log("✓ unity.scripts.author rejects missing token");
+
+  const gameplayComposeResponse = await fetch(`${url}/capabilities/${encodeURIComponent("unity.gameplay.compose")}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      input: {
+        dryRun: false,
+        confirm: true,
+        templates: [
+          {
+            kind: "door",
+            targetPath: "UnauthorizedDoor",
+            interactorTag: "Player",
+            activationDistance: 2
+          }
+        ]
+      }
+    })
+  });
+
+  if (gameplayComposeResponse.status !== 403) {
+    fail(`Expected unity.gameplay.compose without token to return 403, got HTTP ${gameplayComposeResponse.status}.`);
+  }
+
+  console.log("✓ unity.gameplay.compose rejects missing token");
+}
+
+function angleDelta(before, after) {
+  if (!Number.isFinite(before) || !Number.isFinite(after)) {
+    return 0;
+  }
+
+  const raw = Math.abs(after - before) % 360;
+  return Math.min(raw, 360 - raw);
 }
 
 function delay(ms) {

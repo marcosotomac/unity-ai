@@ -8,6 +8,8 @@ export type CapabilityPermission =
   | "read_assets"
   | "read_console"
   | "read_artifacts"
+  | "read_external_files"
+  | "network_access"
   | "capture_screenshots"
   | "write_artifacts"
   | "modify_scenes"
@@ -65,7 +67,21 @@ export type VerificationSignal =
   | "packages_resolved"
   | "asset_mutation_verified"
   | "prefab_mutation_verified"
-  | "meta_xr_configured";
+  | "meta_xr_configured"
+  | "audit_report_generated"
+  | "evidence_hash_verified"
+  | "asset_import_verified"
+  | "asset_license_verified"
+  | "asset_hash_available"
+  | "asset_hash_verified"
+  | "asset_normalized"
+  | "script_source_validated"
+  | "script_compilation_verified"
+  | "gameplay_template_applied"
+  | "ui_audit_completed"
+  | "ui_screen_composed"
+  | "ui_quality_gate_passed"
+  | "runtime_telemetry_captured";
 
 export interface CapabilityManifest {
   readonly name: CapabilityName;
@@ -105,6 +121,7 @@ export interface AuditEvent {
 export type ObservationSource =
   | "project"
   | "scene"
+  | "runtime"
   | "console"
   | "screenshot"
   | "meta_xr"

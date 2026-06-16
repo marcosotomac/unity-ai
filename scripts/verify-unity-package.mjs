@@ -37,18 +37,61 @@ const packagesDir = join(tempProject, "Packages");
 const assetsDir = join(tempProject, "Assets");
 const logsDir = join(repoRoot, "artifacts/unity-verification");
 const logPath = join(logsDir, "editor-compile.log");
+const includeInputSystem = process.env.UNITY_AI_VERIFY_INPUT_SYSTEM === "1";
 
 mkdirSync(packagesDir, { recursive: true });
 mkdirSync(assetsDir, { recursive: true });
 mkdirSync(logsDir, { recursive: true });
 cpSync(packageSource, join(packagesDir, "com.unity-ai.control-plane"), { recursive: true });
 
+if (includeInputSystem) {
+  const editorDir = join(assetsDir, "Editor");
+  mkdirSync(editorDir, { recursive: true });
+  writeFileSync(
+    join(editorDir, "UnityAiInputSystemVerification.cs"),
+    `using System;
+using UnityEditor;
+using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityAI.ControlPlane.Editor.InputSystemSupport;
+
+public static class UnityAiInputSystemVerification
+{
+    public static void Run()
+    {
+        var queueError = InputSystemSimulationBackend.Queue("keyboard", "space", "button", 1f, 0f, 0f);
+        if (!string.IsNullOrWhiteSpace(queueError))
+        {
+            throw new InvalidOperationException(queueError);
+        }
+
+        InputSystem.Update();
+        if (Keyboard.current == null || !Keyboard.current.spaceKey.isPressed)
+        {
+            throw new InvalidOperationException("Virtual keyboard space press was not observed.");
+        }
+
+        var resetError = InputSystemSimulationBackend.Reset();
+        if (!string.IsNullOrWhiteSpace(resetError))
+        {
+            throw new InvalidOperationException(resetError);
+        }
+
+        Debug.Log("UNITY_AI_INPUT_SIMULATION_VERIFIED");
+        EditorApplication.Exit(0);
+    }
+}
+`
+  );
+}
+
 writeFileSync(
   join(packagesDir, "manifest.json"),
   JSON.stringify(
     {
       dependencies: {
-        "com.unity-ai.control-plane": "file:com.unity-ai.control-plane"
+        "com.unity-ai.control-plane": "file:com.unity-ai.control-plane",
+        ...(includeInputSystem ? { "com.unity.inputsystem": process.env.UNITY_AI_INPUT_SYSTEM_VERSION ?? "1.14.0" } : {})
       }
     },
     null,
@@ -65,10 +108,14 @@ const args = [
   "-logFile",
   logPath
 ];
+if (includeInputSystem) {
+  args.push("-executeMethod", "UnityAiInputSystemVerification.Run");
+}
 
 console.log(`Verifying Unity package with: ${unityPath}`);
 console.log(`Temporary project: ${tempProject}`);
 console.log(`Log file: ${logPath}`);
+console.log(`Input System verification: ${includeInputSystem ? "enabled" : "disabled"}`);
 
 const result = spawnSync(unityPath, args, { stdio: "inherit" });
 
@@ -80,6 +127,13 @@ try {
 
 if (result.status !== 0 && !isSuccessfulUnityCompileWithShutdownCrash(logPath)) {
   fail(`Unity package verification failed. Check log: ${logPath}`);
+}
+
+if (includeInputSystem) {
+  const log = existsSync(logPath) ? readFileSync(logPath, "utf8") : "";
+  if (!log.includes("UNITY_AI_INPUT_SIMULATION_VERIFIED")) {
+    fail(`Input System simulation verification did not complete. Check log: ${logPath}`);
+  }
 }
 
 console.log(`Unity package verification passed. Log: ${logPath}`);

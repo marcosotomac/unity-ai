@@ -1,0 +1,27 @@
+{
+  "name": "Unity.AI.ControlPlane.Editor.InputSystem",
+  "rootNamespace": "UnityAI.ControlPlane.Editor.InputSystemSupport",
+  "references": [
+    "Unity.AI.ControlPlane.Editor",
+    "Unity.InputSystem"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": true,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [
+    "UNITY_AI_INPUT_SYSTEM"
+  ],
+  "versionDefines": [
+    {
+      "name": "com.unity.inputsystem",
+      "expression": "",
+      "define": "UNITY_AI_INPUT_SYSTEM"
+    }
+  ],
+  "noEngineReferences": false
+}

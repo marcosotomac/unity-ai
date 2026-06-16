@@ -19,7 +19,10 @@ Unity project
 | Unity bridge URL | `http://127.0.0.1:39071` |
 | MCP env override | `UNITY_AI_BRIDGE_URL` |
 | Mutating route token | `UNITY_AI_BRIDGE_TOKEN` |
-| Timeout override | `UNITY_AI_BRIDGE_TIMEOUT_MS` |
+| Per-attempt timeout | `UNITY_AI_BRIDGE_TIMEOUT_MS` |
+| Retry window | `UNITY_AI_BRIDGE_RETRY_TIMEOUT_MS` (default `90000`) |
+| Maximum attempts | `UNITY_AI_BRIDGE_RETRY_MAX_ATTEMPTS` (default `12`) |
+| Retry delays | `UNITY_AI_BRIDGE_RETRY_BASE_DELAY_MS`, `UNITY_AI_BRIDGE_RETRY_MAX_DELAY_MS` |
 
 ## Unity side
 
@@ -35,7 +38,9 @@ Then click:
 Start Local Bridge
 ```
 
-The Editor window generates a bridge token. MCP servers must send that token through the `x-unity-ai-bridge-token` header for every mutating route. The bridge token and enabled state survive Unity domain reloads for the current Editor session.
+The Editor window generates a bridge token. MCP servers must send that token through the `x-unity-ai-bridge-token` header for every mutating route. The bridge token and enabled state survive Unity domain reloads for the current Editor session. Desktop Editors can also recover from missing session state by reading `~/.config/unity-ai/bridge-token`; this fallback is disabled in batch mode.
+
+During compilation/domain reload, MCP calls wait behind a shared health/reconnection gate and retry with the same `requestId` and `correlationId`. Mutating responses are persisted under `Library/UnityAIControlPlane/BridgeResponses`, so a lost HTTP response can be replayed after reload without applying the operation twice.
 
 The MCP server only attaches the token when `UNITY_AI_BRIDGE_URL` points to `http://127.0.0.1`, `http://localhost`, or `http://[::1]`.
 Trailing slashes are normalized by the MCP bridge client.
@@ -50,12 +55,18 @@ The bridge handles:
 - `POST /capabilities/unity.scenes.list`
 - `POST /capabilities/unity.scene.inspect`
 - `POST /capabilities/unity.scene.inspect_game_object`
+- `POST /capabilities/unity.physics.inspect`
+- `POST /capabilities/unity.runtime.telemetry`
+- `POST /capabilities/unity.ui.audit`
 - `POST /capabilities/unity.scene.upsert_game_object`
 - `POST /capabilities/unity.scene.batch`
+- `POST /capabilities/unity.ui.compose`
+- `POST /capabilities/unity.gameplay.compose`
 - `POST /capabilities/unity.prefabs.list`
 - `POST /capabilities/unity.prefab.inspect`
 - `POST /capabilities/unity.asset.dependencies`
 - `POST /capabilities/unity.scripts.list`
+- `POST /capabilities/unity.scripts.author`
 - `POST /capabilities/unity.assemblies.list`
 - `POST /capabilities/unity.packages.list`
 - `POST /capabilities/unity.project.settings.inspect`
@@ -68,6 +79,8 @@ The bridge handles:
 - `POST /capabilities/unity.build.validate_android_quest`
 - `POST /capabilities/unity.build.android`
 - `POST /capabilities/unity.assets.author`
+- `POST /capabilities/unity.assets.import`
+- `POST /capabilities/unity.assets.import_from_catalog`
 - `POST /capabilities/unity.prefab.manage`
 - `POST /capabilities/unity.checkpoints.create|list|restore|delete`
 - `POST /capabilities/unity.vision.capture`
@@ -90,12 +103,16 @@ The MCP server runs over stdio and exposes:
 - `unity.scenes.list`
 - `unity.scene.inspect`
 - `unity.scene.inspect_game_object`
+- `unity.physics.inspect`
 - `unity.scene.upsert_game_object`
 - `unity.scene.batch`
+- `unity.ui.compose`
+- `unity.gameplay.compose`
 - `unity.prefabs.list`
 - `unity.prefab.inspect`
 - `unity.asset.dependencies`
 - `unity.scripts.list`
+- `unity.scripts.author`
 - `unity.assemblies.list`
 - `unity.packages.list`
 - `unity.project.settings.inspect`
@@ -107,6 +124,7 @@ The MCP server runs over stdio and exposes:
 - `unity.compilation.status`, `unity.compilation.wait`
 - `unity.build.validate_android_quest`, `unity.build.android`
 - `unity.assets.author`
+- `unity.assets.catalog.search`, `unity.assets.import_from_catalog`
 - `unity.prefab.manage`
 - `unity.checkpoints.create`, `unity.checkpoints.list`, `unity.checkpoints.restore`, `unity.checkpoints.delete`
 - `unity.vision.capture`

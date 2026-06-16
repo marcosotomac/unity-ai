@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using UnityEditor;
+using UnityEditor.Animations;
 using UnityEngine;
 
 namespace UnityAI.ControlPlane.Editor
@@ -32,6 +33,11 @@ namespace UnityAI.ControlPlane.Editor
         public bool clearExistingCurves;
         public float frameRate = 60f;
         public AnimationCurveInput[] animationCurves = Array.Empty<AnimationCurveInput>();
+        public bool clearExistingStates = true;
+        public string defaultState;
+        public AnimatorParameterInput[] animatorParameters = Array.Empty<AnimatorParameterInput>();
+        public AnimatorStateInput[] animatorStates = Array.Empty<AnimatorStateInput>();
+        public AnimatorTransitionInput[] animatorTransitions = Array.Empty<AnimatorTransitionInput>();
         public AudioToneInput audioTone = new();
         public AudioImportInput audioImport = new();
     }
@@ -66,6 +72,50 @@ namespace UnityAI.ControlPlane.Editor
         public float value;
         public float inTangent;
         public float outTangent;
+    }
+
+    [Serializable]
+    public sealed class AnimatorParameterInput
+    {
+        public string name;
+        public string type = "float";
+        public float defaultFloat;
+        public int defaultInt;
+        public bool defaultBool;
+    }
+
+    [Serializable]
+    public sealed class AnimatorStateInput
+    {
+        public string name;
+        public string clipPath;
+        public string clipName;
+        public float speed = 1f;
+        public bool writeDefaultValues = true;
+        public float positionX;
+        public float positionY;
+    }
+
+    [Serializable]
+    public sealed class AnimatorTransitionConditionInput
+    {
+        public string mode = "if";
+        public float threshold;
+        public string parameter;
+    }
+
+    [Serializable]
+    public sealed class AnimatorTransitionInput
+    {
+        public string fromState;
+        public string toState;
+        public bool hasExitTime = true;
+        public float exitTime = 1f;
+        public float duration = 0.1f;
+        public bool hasFixedDuration = true;
+        public float offset;
+        public bool canTransitionToSelf;
+        public AnimatorTransitionConditionInput[] conditions = Array.Empty<AnimatorTransitionConditionInput>();
     }
 
     [Serializable]
@@ -165,6 +215,9 @@ namespace UnityAI.ControlPlane.Editor
                         break;
                     case "animation_clip":
                         AuthorAnimationClip(path, input);
+                        break;
+                    case "animator_controller":
+                        AuthorAnimatorController(path, input);
                         break;
                     case "audio_tone":
                         AuthorAudioTone(path, input);
@@ -333,6 +386,192 @@ namespace UnityAI.ControlPlane.Editor
             EditorUtility.SetDirty(clip);
         }
 
+        private static void AuthorAnimatorController(string path, AssetAuthoringInput input)
+        {
+            var states = input.animatorStates ?? Array.Empty<AnimatorStateInput>();
+            if (states.Length == 0 || states.Length > 200)
+            {
+                throw new InvalidOperationException("animator_controller requires 1-200 states.");
+            }
+
+            var stateNames = states
+                .Select(state => RequireAnimatorName(state?.name, "state"))
+                .ToArray();
+            if (stateNames.Distinct(StringComparer.Ordinal).Count() != stateNames.Length)
+            {
+                throw new InvalidOperationException("Animator state names must be unique.");
+            }
+
+            var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(path);
+            if (controller == null)
+            {
+                controller = AnimatorController.CreateAnimatorControllerAtPath(path);
+            }
+
+            if (controller == null)
+            {
+                throw new InvalidOperationException($"Animator Controller '{path}' could not be created.");
+            }
+
+            controller.parameters = BuildAnimatorParameters(input.animatorParameters);
+            var stateMachine = controller.layers[0].stateMachine;
+            if (input.clearExistingStates)
+            {
+                foreach (var child in stateMachine.states.ToArray())
+                {
+                    stateMachine.RemoveState(child.state);
+                }
+
+                foreach (var transition in stateMachine.anyStateTransitions.ToArray())
+                {
+                    stateMachine.RemoveAnyStateTransition(transition);
+                }
+            }
+
+            var createdStates = new Dictionary<string, AnimatorState>(StringComparer.Ordinal);
+            for (var index = 0; index < states.Length; index++)
+            {
+                var stateInput = states[index];
+                var name = stateNames[index];
+                var state = stateMachine.AddState(name, new Vector3(stateInput.positionX, stateInput.positionY, 0f));
+                state.motion = ResolveAnimationClip(stateInput.clipPath, stateInput.clipName);
+                state.speed = Mathf.Clamp(stateInput.speed, -100f, 100f);
+                state.writeDefaultValues = stateInput.writeDefaultValues;
+                createdStates.Add(name, state);
+            }
+
+            var defaultStateName = string.IsNullOrWhiteSpace(input.defaultState)
+                ? stateNames[0]
+                : input.defaultState.Trim();
+            if (!createdStates.TryGetValue(defaultStateName, out var defaultState))
+            {
+                throw new InvalidOperationException($"Default Animator state '{defaultStateName}' was not declared.");
+            }
+
+            stateMachine.defaultState = defaultState;
+            foreach (var transitionInput in input.animatorTransitions ?? Array.Empty<AnimatorTransitionInput>())
+            {
+                if (transitionInput == null
+                    || !createdStates.TryGetValue((transitionInput.fromState ?? string.Empty).Trim(), out var fromState)
+                    || !createdStates.TryGetValue((transitionInput.toState ?? string.Empty).Trim(), out var toState))
+                {
+                    throw new InvalidOperationException("Each Animator transition must reference declared fromState and toState values.");
+                }
+
+                var transition = fromState.AddTransition(toState);
+                transition.hasExitTime = transitionInput.hasExitTime;
+                transition.exitTime = Mathf.Clamp(transitionInput.exitTime, 0f, 1000f);
+                transition.duration = Mathf.Clamp(transitionInput.duration, 0f, 1000f);
+                transition.hasFixedDuration = transitionInput.hasFixedDuration;
+                transition.offset = Mathf.Clamp(transitionInput.offset, 0f, 1f);
+                transition.canTransitionToSelf = transitionInput.canTransitionToSelf;
+                foreach (var condition in transitionInput.conditions ?? Array.Empty<AnimatorTransitionConditionInput>())
+                {
+                    if (condition == null || !controller.parameters.Any(parameter => parameter.name == condition.parameter))
+                    {
+                        throw new InvalidOperationException($"Animator transition condition parameter '{condition?.parameter}' was not declared.");
+                    }
+
+                    transition.AddCondition(ParseConditionMode(condition.mode), condition.threshold, condition.parameter);
+                }
+            }
+
+            EditorUtility.SetDirty(stateMachine);
+            EditorUtility.SetDirty(controller);
+        }
+
+        private static AnimatorControllerParameter[] BuildAnimatorParameters(AnimatorParameterInput[] inputs)
+        {
+            var parameters = inputs ?? Array.Empty<AnimatorParameterInput>();
+            if (parameters.Length > 100)
+            {
+                throw new InvalidOperationException("Animator Controller supports at most 100 declared parameters per request.");
+            }
+
+            var result = new List<AnimatorControllerParameter>();
+            foreach (var input in parameters)
+            {
+                var name = RequireAnimatorName(input?.name, "parameter");
+                if (result.Any(parameter => parameter.name == name))
+                {
+                    throw new InvalidOperationException($"Animator parameter '{name}' was declared more than once.");
+                }
+
+                result.Add(new AnimatorControllerParameter
+                {
+                    name = name,
+                    type = ParseParameterType(input.type),
+                    defaultBool = input.defaultBool,
+                    defaultFloat = input.defaultFloat,
+                    defaultInt = input.defaultInt
+                });
+            }
+
+            return result.ToArray();
+        }
+
+        private static AnimationClip ResolveAnimationClip(string rawPath, string clipName)
+        {
+            var path = NormalizeAssetPath(rawPath);
+            if (!IsSafeAssetPath(path))
+            {
+                throw new InvalidOperationException("Animator state clipPath must remain under Assets.");
+            }
+
+            var clips = AssetDatabase.LoadAllAssetsAtPath(path).OfType<AnimationClip>().ToArray();
+            if (!string.IsNullOrWhiteSpace(clipName))
+            {
+                var named = clips.FirstOrDefault(clip => string.Equals(clip.name, clipName.Trim(), StringComparison.Ordinal));
+                if (named != null)
+                {
+                    return named;
+                }
+            }
+
+            var clip = clips.FirstOrDefault(candidate => !candidate.name.StartsWith("__preview__", StringComparison.OrdinalIgnoreCase));
+            if (clip == null)
+            {
+                throw new InvalidOperationException($"Animation clip '{path}' was not found.");
+            }
+
+            return clip;
+        }
+
+        private static AnimatorControllerParameterType ParseParameterType(string value)
+        {
+            return (value ?? string.Empty).Trim().ToLowerInvariant() switch
+            {
+                "int" => AnimatorControllerParameterType.Int,
+                "bool" => AnimatorControllerParameterType.Bool,
+                "trigger" => AnimatorControllerParameterType.Trigger,
+                _ => AnimatorControllerParameterType.Float
+            };
+        }
+
+        private static AnimatorConditionMode ParseConditionMode(string value)
+        {
+            return (value ?? string.Empty).Trim().ToLowerInvariant() switch
+            {
+                "if_not" => AnimatorConditionMode.IfNot,
+                "greater" => AnimatorConditionMode.Greater,
+                "less" => AnimatorConditionMode.Less,
+                "equals" => AnimatorConditionMode.Equals,
+                "not_equal" => AnimatorConditionMode.NotEqual,
+                _ => AnimatorConditionMode.If
+            };
+        }
+
+        private static string RequireAnimatorName(string value, string kind)
+        {
+            var name = (value ?? string.Empty).Trim();
+            if (name.Length == 0 || name.Length > 128 || name.Any(char.IsControl))
+            {
+                throw new InvalidOperationException($"Animator {kind} name is invalid.");
+            }
+
+            return name;
+        }
+
         private static void AuthorAudioTone(string path, AssetAuthoringInput input)
         {
             var tone = input.audioTone ?? new AudioToneInput();
@@ -448,6 +687,7 @@ namespace UnityAI.ControlPlane.Editor
                 ["shader"] = ".shader",
                 ["material"] = ".mat",
                 ["animation_clip"] = ".anim",
+                ["animator_controller"] = ".controller",
                 ["audio_tone"] = ".wav"
             };
             if (kind == "audio_import")
@@ -464,7 +704,7 @@ namespace UnityAI.ControlPlane.Editor
 
             if (!extensions.TryGetValue(kind, out var extension))
             {
-                error = "kind must be shader, material, animation_clip, audio_tone, or audio_import.";
+                error = "kind must be shader, material, animation_clip, animator_controller, audio_tone, or audio_import.";
                 return false;
             }
 
@@ -485,6 +725,7 @@ namespace UnityAI.ControlPlane.Editor
                 "shader" => asset is Shader,
                 "material" => asset is Material,
                 "animation_clip" => asset is AnimationClip,
+                "animator_controller" => asset is RuntimeAnimatorController,
                 "audio_tone" => asset is AudioClip,
                 "audio_import" => asset is AudioClip,
                 _ => false

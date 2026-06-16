@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading;
@@ -33,7 +35,16 @@ namespace UnityAI.ControlPlane.Editor
     {
         public string capability;
         public string requestBody;
+        public string cacheKey;
+        public bool persistResponse;
         public TaskCompletionSource<BridgeResponse> completion;
+    }
+
+    [Serializable]
+    internal sealed class BridgeCachedResponse
+    {
+        public string cachedAtUtc;
+        public BridgeResponse response;
     }
 
     [InitializeOnLoad]
@@ -42,13 +53,19 @@ namespace UnityAI.ControlPlane.Editor
         public const int DefaultPort = 39071;
         private const string SessionEnabledKey = "UnityAI.ControlPlane.BridgeEnabled";
         private const string SessionTokenKey = "UnityAI.ControlPlane.BridgeToken";
+        private const int MaximumMemoryCacheEntries = 1024;
+        private const int MaximumPersistentCacheEntries = 2048;
 
         private static readonly ConcurrentQueue<BridgeWorkItem> WorkQueue = new();
+        private static readonly ConcurrentDictionary<string, Task<BridgeResponse>> InFlightRequests = new();
+        private static readonly ConcurrentDictionary<string, BridgeResponse> CompletedResponses = new();
         private static HttpListener _listener;
         private static CancellationTokenSource _cancellation;
         private static Task _serverTask;
         private static string _bridgeToken = string.Empty;
         private static int _restoreAttempts;
+        private static double _nextRestoreAttemptAt;
+        private static double _restoreDeadlineAt;
 
         public static bool IsRunning => _listener != null && _listener.IsListening;
         public static string Url => $"http://127.0.0.1:{DefaultPort}/";
@@ -92,6 +109,7 @@ namespace UnityAI.ControlPlane.Editor
             }
 
             _serverTask = Task.Run(() => ListenLoop(_cancellation.Token));
+            CleanupPersistentResponseCache();
             if (persistSession)
             {
                 SessionState.SetBool(SessionEnabledKey, true);
@@ -99,6 +117,9 @@ namespace UnityAI.ControlPlane.Editor
             }
 
             _restoreAttempts = 0;
+            _nextRestoreAttemptAt = 0;
+            _restoreDeadlineAt = 0;
+            EditorApplication.update -= RetryRestoreWhenReady;
             Debug.Log($"Unity AI bridge listening on {Url}");
         }
 
@@ -125,6 +146,7 @@ namespace UnityAI.ControlPlane.Editor
             _serverTask = null;
             _cancellation = null;
             _bridgeToken = string.Empty;
+            EditorApplication.update -= RetryRestoreWhenReady;
             if (clearSession)
             {
                 SessionState.EraseBool(SessionEnabledKey);
@@ -134,27 +156,80 @@ namespace UnityAI.ControlPlane.Editor
 
         private static void RestoreAfterDomainReload()
         {
-            if (IsRunning || !SessionState.GetBool(SessionEnabledKey, false))
+            if (IsRunning)
             {
+                EditorApplication.update -= RetryRestoreWhenReady;
                 return;
+            }
+
+            var sessionEnabled = SessionState.GetBool(SessionEnabledKey, false);
+            var token = sessionEnabled
+                ? SessionState.GetString(SessionTokenKey, string.Empty)
+                : ReadDefaultDesktopToken();
+            if (!sessionEnabled && string.IsNullOrWhiteSpace(token))
+            {
+                EditorApplication.update -= RetryRestoreWhenReady;
+                return;
+            }
+
+            if (_restoreDeadlineAt <= 0)
+            {
+                _restoreDeadlineAt = EditorApplication.timeSinceStartup + 90;
             }
 
             try
             {
-                StartInternal(SessionState.GetString(SessionTokenKey, string.Empty), false);
+                StartInternal(token, !sessionEnabled);
             }
-            catch (HttpListenerException exception)
+            catch (Exception exception)
             {
                 _restoreAttempts++;
-                if (_restoreAttempts < 20)
+                if (EditorApplication.timeSinceStartup < _restoreDeadlineAt)
                 {
-                    EditorApplication.delayCall += RestoreAfterDomainReload;
+                    var backoffSeconds = Math.Min(3, 0.1 * Math.Pow(1.5, Math.Min(_restoreAttempts, 12)));
+                    _nextRestoreAttemptAt = EditorApplication.timeSinceStartup + backoffSeconds;
+                    EditorApplication.update -= RetryRestoreWhenReady;
+                    EditorApplication.update += RetryRestoreWhenReady;
                     return;
                 }
 
-                Debug.LogError($"Unity AI bridge could not resume after domain reload: {exception.Message}");
+                Debug.LogError($"Unity AI bridge could not resume within 90 seconds after domain reload: {exception.Message}");
                 StopInternal(true);
             }
+        }
+
+        private static string ReadDefaultDesktopToken()
+        {
+            if (Application.isBatchMode)
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                var tokenPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    ".config",
+                    "unity-ai",
+                    "bridge-token");
+                return File.Exists(tokenPath) ? File.ReadAllText(tokenPath).Trim() : string.Empty;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"Unity AI bridge could not read the desktop token: {exception.Message}");
+                return string.Empty;
+            }
+        }
+
+        private static void RetryRestoreWhenReady()
+        {
+            if (EditorApplication.timeSinceStartup < _nextRestoreAttemptAt)
+            {
+                return;
+            }
+
+            EditorApplication.update -= RetryRestoreWhenReady;
+            RestoreAfterDomainReload();
         }
 
         private static async Task ListenLoop(CancellationToken cancellationToken)
@@ -232,37 +307,250 @@ namespace UnityAI.ControlPlane.Editor
 
             var body = await ReadRequestBody(context.Request);
             var envelope = ParseEnvelope(body);
-            var completion = new TaskCompletionSource<BridgeResponse>();
+            var cacheKey = CreateCacheKey(capability, envelope.requestId);
+            if (TryGetCompletedResponse(cacheKey, envelope.requestId, capability, out var completed))
+            {
+                await WriteResponse(context, completed.ok ? 200 : 500, completed);
+                return;
+            }
+
+            var response = await EnqueueOrJoin(capability, body, cacheKey, IsMutatingCapability(capability));
+            await WriteResponse(context, response.ok ? 200 : 500, response);
+        }
+
+        private static Task<BridgeResponse> EnqueueOrJoin(string capability, string requestBody, string cacheKey, bool persistResponse)
+        {
+            if (string.IsNullOrEmpty(cacheKey))
+            {
+                return Enqueue(capability, requestBody, string.Empty, false);
+            }
+
+            var completion = new TaskCompletionSource<BridgeResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (InFlightRequests.TryGetValue(cacheKey, out var existing))
+            {
+                return existing;
+            }
+
+            if (!InFlightRequests.TryAdd(cacheKey, completion.Task))
+            {
+                return InFlightRequests.TryGetValue(cacheKey, out existing)
+                    ? existing
+                    : EnqueueOrJoin(capability, requestBody, cacheKey, persistResponse);
+            }
 
             WorkQueue.Enqueue(new BridgeWorkItem
             {
                 capability = capability,
-                requestBody = body,
+                requestBody = requestBody,
+                cacheKey = cacheKey,
+                persistResponse = persistResponse,
                 completion = completion
             });
+            return completion.Task;
+        }
 
-            var response = await completion.Task;
-            await WriteResponse(context, response.ok ? 200 : 500, response);
+        private static Task<BridgeResponse> Enqueue(string capability, string requestBody, string cacheKey, bool persistResponse)
+        {
+            var completion = new TaskCompletionSource<BridgeResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+            WorkQueue.Enqueue(new BridgeWorkItem
+            {
+                capability = capability,
+                requestBody = requestBody,
+                cacheKey = cacheKey,
+                persistResponse = persistResponse,
+                completion = completion
+            });
+            return completion.Task;
         }
 
         private static void ProcessQueuedWork()
         {
             while (WorkQueue.TryDequeue(out var item))
             {
+                BridgeResponse response;
                 try
                 {
-                    item.completion.SetResult(ExecuteCapability(item.capability, item.requestBody));
+                    response = ExecuteCapability(item.capability, item.requestBody);
                 }
                 catch (Exception exception)
                 {
-                    item.completion.SetResult(new BridgeResponse
+                    var envelope = ParseEnvelope(item.requestBody);
+                    response = new BridgeResponse
                     {
                         ok = false,
                         capability = item.capability,
+                        requestId = envelope.requestId,
+                        correlationId = envelope.correlationId,
                         error = exception.Message
-                    });
+                    };
+                }
+
+                if (!string.IsNullOrEmpty(item.cacheKey))
+                {
+                    CompletedResponses[item.cacheKey] = response;
+                    TrimMemoryCache();
+                    if (item.persistResponse)
+                    {
+                        PersistCompletedResponse(response);
+                    }
+
+                    InFlightRequests.TryRemove(item.cacheKey, out _);
+                }
+
+                item.completion.TrySetResult(response);
+            }
+        }
+
+        private static bool TryGetCompletedResponse(string cacheKey, string requestId, string capability, out BridgeResponse response)
+        {
+            response = null;
+            if (string.IsNullOrEmpty(cacheKey))
+            {
+                return false;
+            }
+
+            if (CompletedResponses.TryGetValue(cacheKey, out response))
+            {
+                return true;
+            }
+
+            if (!IsMutatingCapability(capability) || !TryLoadPersistentResponse(requestId, capability, out response))
+            {
+                response = null;
+                return false;
+            }
+
+            CompletedResponses[cacheKey] = response;
+            TrimMemoryCache();
+            return true;
+        }
+
+        private static string CreateCacheKey(string capability, string requestId)
+        {
+            return IsSafeRequestId(requestId) ? capability + "|" + requestId : string.Empty;
+        }
+
+        private static bool IsSafeRequestId(string requestId)
+        {
+            if (string.IsNullOrWhiteSpace(requestId) || requestId.Length > 128)
+            {
+                return false;
+            }
+
+            return requestId.All(character => char.IsLetterOrDigit(character) || character == '-' || character == '_');
+        }
+
+        private static void PersistCompletedResponse(BridgeResponse response)
+        {
+            if (response == null || !IsSafeRequestId(response.requestId))
+            {
+                return;
+            }
+
+            try
+            {
+                var directory = GetPersistentResponseCacheDirectory();
+                Directory.CreateDirectory(directory);
+                var record = new BridgeCachedResponse
+                {
+                    cachedAtUtc = DateTime.UtcNow.ToString("O"),
+                    response = response
+                };
+                var path = Path.Combine(directory, response.requestId + ".json");
+                var temporaryPath = path + ".tmp";
+                File.WriteAllText(temporaryPath, JsonUtility.ToJson(record, true), Encoding.UTF8);
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+
+                File.Move(temporaryPath, path);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"Unity AI bridge could not persist idempotency response: {exception.Message}");
+            }
+        }
+
+        private static bool TryLoadPersistentResponse(string requestId, string capability, out BridgeResponse response)
+        {
+            response = null;
+            if (!IsSafeRequestId(requestId))
+            {
+                return false;
+            }
+
+            try
+            {
+                var path = Path.Combine(GetPersistentResponseCacheDirectory(), requestId + ".json");
+                if (!File.Exists(path) || DateTime.UtcNow - File.GetLastWriteTimeUtc(path) > TimeSpan.FromDays(1))
+                {
+                    return false;
+                }
+
+                var record = JsonUtility.FromJson<BridgeCachedResponse>(File.ReadAllText(path, Encoding.UTF8));
+                if (record?.response == null
+                    || !string.Equals(record.response.requestId, requestId, StringComparison.Ordinal)
+                    || !string.Equals(record.response.capability, capability, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                response = record.response;
+                return true;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"Unity AI bridge could not read idempotency response: {exception.Message}");
+                return false;
+            }
+        }
+
+        private static void TrimMemoryCache()
+        {
+            if (CompletedResponses.Count <= MaximumMemoryCacheEntries)
+            {
+                return;
+            }
+
+            foreach (var key in CompletedResponses.Keys.Take(CompletedResponses.Count - MaximumMemoryCacheEntries))
+            {
+                CompletedResponses.TryRemove(key, out _);
+            }
+        }
+
+        private static void CleanupPersistentResponseCache()
+        {
+            try
+            {
+                var directory = GetPersistentResponseCacheDirectory();
+                if (!Directory.Exists(directory))
+                {
+                    return;
+                }
+
+                var files = new DirectoryInfo(directory)
+                    .GetFiles("*.json")
+                    .OrderByDescending(file => file.LastWriteTimeUtc)
+                    .ToArray();
+                for (var index = 0; index < files.Length; index += 1)
+                {
+                    if (index >= MaximumPersistentCacheEntries || DateTime.UtcNow - files[index].LastWriteTimeUtc > TimeSpan.FromDays(1))
+                    {
+                        files[index].Delete();
+                    }
                 }
             }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"Unity AI bridge could not clean idempotency responses: {exception.Message}");
+            }
+        }
+
+        private static string GetPersistentResponseCacheDirectory()
+        {
+            var projectRoot = Directory.GetParent(Application.dataPath)?.FullName ?? Application.dataPath;
+            return Path.Combine(projectRoot, "Library", "UnityAIControlPlane", "BridgeResponses");
         }
 
         private static BridgeResponse ExecuteCapability(string capability, string requestBody)
@@ -275,6 +563,8 @@ namespace UnityAI.ControlPlane.Editor
                     return JsonResult(capability, envelope, ProjectInspector.InspectActiveProject());
                 case "unity.project.snapshot":
                     return JsonResult(capability, envelope, ProjectSnapshotObserver.Capture());
+                case "unity.audit.report":
+                    return JsonResult(capability, envelope, AuditReportGenerator.Generate(requestBody));
                 case "unity.console.read":
                     return JsonResult(capability, envelope, ConsoleLogBridge.GetSummary());
                 case "unity.console.diagnose":
@@ -291,10 +581,20 @@ namespace UnityAI.ControlPlane.Editor
                     return JsonResult(capability, envelope, SceneInspector.InspectActiveScene(requestBody));
                 case "unity.scene.inspect_game_object":
                     return JsonResult(capability, envelope, GameObjectInspector.Inspect(requestBody));
+                case "unity.physics.inspect":
+                    return JsonResult(capability, envelope, PhysicsInspector.Inspect(requestBody));
+                case "unity.runtime.telemetry":
+                    return JsonResult(capability, envelope, RuntimeTelemetryObserver.Capture(requestBody));
+                case "unity.ui.audit":
+                    return JsonResult(capability, envelope, UiComposeOperation.Audit(requestBody));
                 case "unity.scene.upsert_game_object":
                     return JsonResult(capability, envelope, SceneUpsertGameObjectOperation.Execute(requestBody));
                 case "unity.scene.batch":
                     return JsonResult(capability, envelope, SceneBatchOperation.Execute(requestBody));
+                case "unity.ui.compose":
+                    return JsonResult(capability, envelope, UiComposeOperation.Compose(requestBody));
+                case "unity.gameplay.compose":
+                    return JsonResult(capability, envelope, GameplayComposeOperation.Execute(requestBody));
                 case "unity.prefabs.list":
                     return JsonResult(capability, envelope, PrefabObserver.ListPrefabs(requestBody));
                 case "unity.prefab.inspect":
@@ -303,6 +603,8 @@ namespace UnityAI.ControlPlane.Editor
                     return JsonResult(capability, envelope, AssetDependencyObserver.InspectDependencies(requestBody));
                 case "unity.scripts.list":
                     return JsonResult(capability, envelope, ScriptAndAssemblyObserver.ListScripts(requestBody));
+                case "unity.scripts.author":
+                    return JsonResult(capability, envelope, ScriptAuthoringOperation.Start(requestBody));
                 case "unity.assemblies.list":
                     return JsonResult(capability, envelope, ScriptAndAssemblyObserver.ListAssemblies(requestBody));
                 case "unity.packages.list":
@@ -335,6 +637,10 @@ namespace UnityAI.ControlPlane.Editor
                     return JsonResult(capability, envelope, BuildOperations.StartAndroidBuild(requestBody));
                 case "unity.assets.author":
                     return JsonResult(capability, envelope, AssetAuthoringOperation.Execute(requestBody));
+                case "unity.assets.import":
+                    return JsonResult(capability, envelope, AssetImportOperation.Execute(requestBody));
+                case "unity.assets.import_from_catalog":
+                    return JsonResult(capability, envelope, AssetImportOperation.Execute(requestBody, capability));
                 case "unity.prefab.manage":
                     return JsonResult(capability, envelope, PrefabAssetOperation.Execute(requestBody));
                 case "unity.checkpoints.create":
@@ -415,6 +721,8 @@ namespace UnityAI.ControlPlane.Editor
                 case "unity.console.apply_fix":
                 case "unity.scene.upsert_game_object":
                 case "unity.scene.batch":
+                case "unity.ui.compose":
+                case "unity.gameplay.compose":
                 case "unity.project.settings.update":
                 case "unity.packages.change":
                 case "unity.jobs.cancel":
@@ -423,6 +731,9 @@ namespace UnityAI.ControlPlane.Editor
                 case "unity.compilation.wait":
                 case "unity.build.android":
                 case "unity.assets.author":
+                case "unity.assets.import":
+                case "unity.assets.import_from_catalog":
+                case "unity.scripts.author":
                 case "unity.prefab.manage":
                 case "unity.checkpoints.create":
                 case "unity.checkpoints.restore":

@@ -18,6 +18,7 @@ namespace UnityAI.ControlPlane.Editor
         public ProjectSnapshotAssemblies assemblies = new();
         public ProjectSnapshotPackages packages = new();
         public ProjectSettingsReport settings = new();
+        public ProjectEnvironmentReport environment = new();
         public ProjectSnapshotMetaXr metaXr = new();
         public ProjectSnapshotArtifacts artifacts = new();
         public ProjectSnapshotCapability[] capabilities = Array.Empty<ProjectSnapshotCapability>();
@@ -45,7 +46,10 @@ namespace UnityAI.ControlPlane.Editor
         public int warningCount;
         public int logCount;
         public int diagnosticCount;
+        public int compilationErrorCount;
+        public int nonBlockingIssueCount;
         public bool hasErrors;
+        public bool hasBlockingErrors;
         public ConsoleDiagnosticEntry[] topDiagnostics = Array.Empty<ConsoleDiagnosticEntry>();
     }
 
@@ -149,6 +153,7 @@ namespace UnityAI.ControlPlane.Editor
             TryCapture("assemblies", failures, () => snapshot.assemblies = CaptureAssemblies());
             TryCapture("packages", failures, () => snapshot.packages = CapturePackages());
             TryCapture("settings", failures, () => snapshot.settings = ProjectSettingsInspector.Inspect());
+            TryCapture("environment", failures, () => snapshot.environment = ProjectEnvironmentInspector.Inspect());
             TryCapture("meta_xr", failures, () => snapshot.metaXr = CaptureMetaXr());
             TryCapture("artifacts", failures, () => snapshot.artifacts = CaptureArtifacts());
 
@@ -182,7 +187,10 @@ namespace UnityAI.ControlPlane.Editor
                 warningCount = report.warningCount,
                 logCount = report.logCount,
                 diagnosticCount = report.diagnosticCount,
+                compilationErrorCount = report.compilationErrorCount,
+                nonBlockingIssueCount = report.nonBlockingIssueCount,
                 hasErrors = report.hasErrors,
+                hasBlockingErrors = report.hasBlockingErrors,
                 topDiagnostics = SelectTopDiagnostics(report.diagnostics).ToArray()
             };
         }
@@ -193,6 +201,7 @@ namespace UnityAI.ControlPlane.Editor
             AddDiagnosticsByCategory(diagnostics, selected, "compiler_error");
             AddDiagnosticsByCategory(diagnostics, selected, "runtime_exception");
             AddDiagnosticsByCategory(diagnostics, selected, "import_error");
+            AddDiagnosticsByCategory(diagnostics, selected, "bridge_error");
             AddDiagnosticsByCategory(diagnostics, selected, "warning");
             AddDiagnosticsByCategory(diagnostics, selected, "unknown");
             return selected;
@@ -377,9 +386,13 @@ namespace UnityAI.ControlPlane.Editor
                 Capability("unity.console.plan_fix", "read"),
                 Capability("unity.console.apply_fix", "mutating_token_required"),
                 Capability("unity.assets.list", "read"),
+                Capability("unity.assets.catalog.search", "read"),
+                Capability("unity.assets.import_from_catalog", "mutating_token_required"),
                 Capability("unity.scenes.list", "read"),
                 Capability("unity.scene.inspect", "read"),
                 Capability("unity.scene.inspect_game_object", "read"),
+                Capability("unity.physics.inspect", "read"),
+                Capability("unity.runtime.telemetry", "read"),
                 Capability("unity.scene.upsert_game_object", "mutating_token_required"),
                 Capability("unity.scene.batch", "mutating_token_required"),
                 Capability("unity.prefabs.list", "read"),
@@ -401,7 +414,7 @@ namespace UnityAI.ControlPlane.Editor
         {
             var flags = new List<string> { "missing_bridge_token_not_relevant" };
 
-            if (snapshot.console.hasErrors)
+            if (snapshot.console.hasBlockingErrors)
             {
                 flags.Add("compiler_errors_present");
             }
@@ -426,6 +439,16 @@ namespace UnityAI.ControlPlane.Editor
                 flags.Add("partial_snapshot");
             }
 
+            if (snapshot.environment.renderPipeline.kind == "custom")
+            {
+                flags.Add("custom_render_pipeline");
+            }
+
+            if (snapshot.environment.inputSystem.inputSystemPackageEnabled && !snapshot.environment.inputSystem.inputSystemPackageInstalled)
+            {
+                flags.Add("input_system_package_missing");
+            }
+
             return flags;
         }
 
@@ -433,7 +456,7 @@ namespace UnityAI.ControlPlane.Editor
         {
             var actions = new List<string>();
 
-            if (snapshot.console.hasErrors)
+            if (snapshot.console.hasBlockingErrors)
             {
                 actions.Add("run unity.console.diagnose");
                 actions.Add("run unity.console.plan_fix");
@@ -449,6 +472,11 @@ namespace UnityAI.ControlPlane.Editor
                 actions.Add("run unity.meta_xr.validate_setup");
             }
 
+            if (snapshot.environment.inputSystem.mode == "unknown")
+            {
+                actions.Add("verify Active Input Handling before generating runtime input code");
+            }
+
             if (actions.Count == 0)
             {
                 actions.Add("inspect active scene before acting");
@@ -459,9 +487,9 @@ namespace UnityAI.ControlPlane.Editor
 
         private static List<string> BuildVerificationSignals(ProjectContextSnapshot snapshot)
         {
-            var signals = new List<string> { "structured_observation", "console_snapshot", "console_diagnostics" };
+            var signals = new List<string> { "structured_observation", "console_snapshot", "console_diagnostics", "environment_introspected" };
 
-            if (snapshot.console.errorCount == 0)
+            if (snapshot.console.compilationErrorCount == 0)
             {
                 signals.Add("console_clean");
             }

@@ -35,12 +35,16 @@ Exposes project-grade tools to AI agents while defining capability contracts and
 Initial tool families:
 
 - `unity.project.*` — inspect project structure, packages, settings, scenes, scripts, and assets.
+- `unity.audit.*` — generate hashed JSON/Markdown reports from persisted events and before/after evidence.
 - `unity.assets.*` — list project assets with GUIDs, paths, and main asset types.
+- `unity.assets.import` — copy or download FBX/OBJ/DAE/3DS/DXF and package-backed glTF models, textures, and audio; verify hashes; configure importers; instantiate models; and save prefabs.
+- `unity.assets.catalog.search` / `unity.assets.import_from_catalog` — search CC0-by-default asset catalogs and import entries with enforced license, provenance, byte size, and SHA-256 metadata.
 - `unity.asset.*` — inspect specific asset metadata and dependencies.
 - `unity.prefabs.*` / `unity.prefab.*` — list and inspect prefab assets.
 - `unity.scene.*` — inspect hierarchies and serialized component state, then create, duplicate, rename, reparent, delete, instantiate prefabs, add/remove components, and set serialized properties through atomic batches.
+- `unity.gameplay.*` — turn existing objects into checkpointed doors, pickups, and multi-target proximity activators through high-level templates.
 - `unity.scenes.*` — list scenes discovered in the project and Build Settings.
-- `unity.scripts.*` / `unity.assemblies.*` — inspect C# scripts and Unity script assemblies.
+- `unity.scripts.*` / `unity.assemblies.*` — inspect C# scripts and assemblies, or author hash-confirmed runtime `MonoBehaviour` components with compile verification and rollback.
 - `unity.packages.*` — list and change registry packages through reload-safe jobs.
 - `unity.jobs.*` — inspect and cancel persistent long-running operations.
 - `unity.playmode.*` / `unity.compilation.*` — control Play Mode and wait for compilation/import plus console verification.
@@ -50,7 +54,7 @@ Initial tool families:
 - `unity.meta_xr.*` — validate and configure Meta XR SDK, OpenXR, rigs, hands, passthrough, anchors, interactions, and Quest build requirements.
 - `unity.tests.*` — run Edit Mode/Play Mode tests and summarize failures.
 - `unity.build.*` — validate and execute builds, especially Android/Quest targets.
-- `unity.assets.author` — create or edit shaders, materials, animation clips, generated WAV audio, and audio import settings.
+- `unity.assets.author` — create or edit shaders, materials, animation clips, Animator Controllers, generated WAV audio, and audio import settings.
 - `unity.prefab.manage` — save prefab assets, create variants, edit prefab contents, and apply/revert overrides.
 
 ### Unity Editor plugin
@@ -155,7 +159,7 @@ npm run setup:user -- --unity-project /path/to/UnityProject --opencode --claude-
 Apply the changes:
 
 ```bash
-npm run setup:user -- --unity-project /path/to/UnityProject --opencode --claude-code --codex --build --write
+npm run setup:user -- --unity-project /path/to/UnityProject --opencode --claude-code --codex --antigravity --build --write
 ```
 
 What it changes:
@@ -164,10 +168,11 @@ What it changes:
 - Adds or updates `mcp.unity-ai` in `~/.config/opencode/opencode.json` using an absolute path to `apps/mcp-server/dist/index.js`.
 - Configures Claude Code through `claude mcp add-json unity-ai ...`; the script does not edit Claude Code config files directly.
 - Adds or updates a generated `unity-ai` MCP server block in `~/.codex/config.toml`.
+- Adds or updates `unity-ai` in Antigravity, Antigravity CLI, and Antigravity IDE MCP configs.
 - Creates `.bak-YYYYMMDDHHmmss` backups next to files before writing.
 - Generates and prints a local bridge token when applying with `--write` and an MCP host without `--bridge-token`; use that same token when starting the Unity local bridge.
 
-After changing opencode or Codex config, restart the host so it reloads config. Claude Code is configured through its CLI.
+After changing opencode, Codex, or Antigravity config, restart the host so it reloads config. Claude Code is configured through its CLI.
 
 See `docs/setup.md` for focused setup details and examples.
 
@@ -185,7 +190,12 @@ Useful commands:
 npm ci
 npm run typecheck
 npm run build
+npm run schemas:check
+npm run verify:asset-catalog
+npm run verify:bridge-retry
 npm run verify:unity-package
 ```
 
 `npm run verify:unity-package` expects a local Unity installation. Set `UNITY_PATH` or pass the Unity executable path as the first argument if Unity is not discoverable in the default location.
+
+Run `npm run schemas:antigravity` after adding or changing MCP tools to refresh Antigravity, Antigravity CLI, and Antigravity IDE local `parameters` JSON instead of leaving stale `parameters: null` entries.

@@ -1,5 +1,6 @@
 using System;
 using UnityEditor;
+using UnityEditorInternal;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -18,6 +19,11 @@ namespace UnityAI.ControlPlane.Editor
         public string apiCompatibilityLevel;
         public bool developmentBuild;
         public bool connectProfiler;
+        public string[] tags = Array.Empty<string>();
+        public string[] layers = Array.Empty<string>();
+        public RenderPipelineEnvironment renderPipeline = new();
+        public InputSystemEnvironment inputSystem = new();
+        public string[] compatibilityWarnings = Array.Empty<string>();
         public string capturedAtUtc;
     }
 
@@ -27,6 +33,7 @@ namespace UnityAI.ControlPlane.Editor
         {
             var buildTarget = EditorUserBuildSettings.activeBuildTarget;
             var buildTargetGroup = BuildPipeline.GetBuildTargetGroup(buildTarget);
+            var environment = ProjectEnvironmentInspector.Inspect();
 
             return new ProjectSettingsReport
             {
@@ -40,6 +47,11 @@ namespace UnityAI.ControlPlane.Editor
                 apiCompatibilityLevel = SafeGetApiCompatibilityLevel(buildTargetGroup),
                 developmentBuild = EditorUserBuildSettings.development,
                 connectProfiler = EditorUserBuildSettings.connectProfiler,
+                tags = SafeGetTags(),
+                layers = SafeGetLayers(),
+                renderPipeline = environment.renderPipeline,
+                inputSystem = environment.inputSystem,
+                compatibilityWarnings = environment.compatibilityWarnings,
                 capturedAtUtc = DateTime.UtcNow.ToString("O")
             };
         }
@@ -77,6 +89,30 @@ namespace UnityAI.ControlPlane.Editor
             catch
             {
                 return string.Empty;
+            }
+        }
+
+        private static string[] SafeGetTags()
+        {
+            try
+            {
+                return InternalEditorUtility.tags ?? Array.Empty<string>();
+            }
+            catch
+            {
+                return Array.Empty<string>();
+            }
+        }
+
+        private static string[] SafeGetLayers()
+        {
+            try
+            {
+                return InternalEditorUtility.layers ?? Array.Empty<string>();
+            }
+            catch
+            {
+                return Array.Empty<string>();
             }
         }
     }

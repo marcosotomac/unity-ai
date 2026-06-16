@@ -16,6 +16,7 @@ Current status: the repository has a working MCP-to-Unity control plane with obs
 - Unity bridge routes the first controlled act capability: `unity.editor.create_empty_game_object` with dry-run, structured audit events, and verification signals.
 - Unity bridge exposes detailed GameObject/component inspection and atomic scene batches with automatic Undo rollback on failure.
 - The first act capability persists audit events to `UnityAIArtifacts/Audit/events.jsonl`.
+- `unity.audit.report` correlates persisted events with hashed before/after evidence and writes JSON/Markdown reports.
 - The first act capability requires explicit `confirm: true` for scene mutation.
 - Narrow Unity Undo verification is available through `unity.editor.undo_last_operation` for the first create→undo flow.
 - Act and rollback responses plus persisted audit events include request/correlation IDs.
@@ -27,6 +28,9 @@ Current status: the repository has a working MCP-to-Unity control plane with obs
 - Persistent jobs cover Edit/Play tests, Play Mode transitions, compilation waits, Android builds, package changes, and Meta XR setup.
 - Durable checkpoints hash project files and can restore files that changed or remove assets that did not exist at checkpoint time.
 - Asset authoring covers shaders, materials, animation clips, WAV generation, and audio importer settings.
+- External asset authoring covers local/HTTPS model, texture, and audio import, importer settings, model instantiation, prefab creation, Animator Controllers, and reusable runtime behaviours.
+- Runtime script authoring covers source validation, exact-hash confirmation, durable checkpoints, domain-reload-safe compilation verification, component attachment, and automatic rollback.
+- Gameplay composition covers atomic proximity doors, collectible pickups, and multi-target activators with direct scene-reference wiring and Play Mode verification.
 - Prefab management covers save, variants, prefab-content edits, and apply/revert overrides.
 - Android/Quest validation and Meta OpenXR configuration are routed through MCP.
 
