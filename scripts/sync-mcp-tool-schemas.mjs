@@ -86,7 +86,8 @@ function antigravitySchemaDirectories() {
 
   return [
     join(homedir(), ".gemini/antigravity/mcp/unity-ai"),
-    join(homedir(), ".gemini/antigravity-cli/mcp/unity-ai")
+    join(homedir(), ".gemini/antigravity-cli/mcp/unity-ai"),
+    join(homedir(), ".gemini/antigravity-ide/mcp/unity-ai")
   ];
 }
 

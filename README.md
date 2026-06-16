@@ -159,7 +159,7 @@ npm run setup:user -- --unity-project /path/to/UnityProject --opencode --claude-
 Apply the changes:
 
 ```bash
-npm run setup:user -- --unity-project /path/to/UnityProject --opencode --claude-code --codex --build --write
+npm run setup:user -- --unity-project /path/to/UnityProject --opencode --claude-code --codex --antigravity --build --write
 ```
 
 What it changes:
@@ -168,10 +168,11 @@ What it changes:
 - Adds or updates `mcp.unity-ai` in `~/.config/opencode/opencode.json` using an absolute path to `apps/mcp-server/dist/index.js`.
 - Configures Claude Code through `claude mcp add-json unity-ai ...`; the script does not edit Claude Code config files directly.
 - Adds or updates a generated `unity-ai` MCP server block in `~/.codex/config.toml`.
+- Adds or updates `unity-ai` in Antigravity, Antigravity CLI, and Antigravity IDE MCP configs.
 - Creates `.bak-YYYYMMDDHHmmss` backups next to files before writing.
 - Generates and prints a local bridge token when applying with `--write` and an MCP host without `--bridge-token`; use that same token when starting the Unity local bridge.
 
-After changing opencode or Codex config, restart the host so it reloads config. Claude Code is configured through its CLI.
+After changing opencode, Codex, or Antigravity config, restart the host so it reloads config. Claude Code is configured through its CLI.
 
 See `docs/setup.md` for focused setup details and examples.
 
@@ -197,4 +198,4 @@ npm run verify:unity-package
 
 `npm run verify:unity-package` expects a local Unity installation. Set `UNITY_PATH` or pass the Unity executable path as the first argument if Unity is not discoverable in the default location.
 
-Run `npm run schemas:antigravity` after adding or changing MCP tools to refresh Antigravity's local `parameters` JSON instead of leaving stale `parameters: null` entries.
+Run `npm run schemas:antigravity` after adding or changing MCP tools to refresh Antigravity, Antigravity CLI, and Antigravity IDE local `parameters` JSON instead of leaving stale `parameters: null` entries.
