@@ -7,6 +7,17 @@ import { AssetCatalogService } from "../apps/mcp-server/dist/asset-catalog.js";
 
 const model = "o CatalogTriangle\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
 const sha256 = createHash("sha256").update(model).digest("hex");
+
+const bundledCatalog = new AssetCatalogService({
+  manifestUrls: [],
+  allowedLicenses: ["CC0-1.0"],
+  allowInsecureLocalhost: false
+});
+const vehicleSearch = await bundledCatalog.search({ query: "car", kind: "model" });
+assert(vehicleSearch.assets.some((asset) => asset.assetId === "unity-ai:starter-vehicle"));
+const characterSearch = await bundledCatalog.search({ query: "npc", kind: "model" });
+assert(characterSearch.assets.some((asset) => asset.assetId === "unity-ai:starter-character"));
+
 const server = createServer((request, response) => {
   if (request.url === "/catalog.json") {
     const address = server.address();
@@ -87,7 +98,7 @@ try {
   assert.equal(resolved.sha256, sha256);
   assert.equal(resolved.source.kind, "url");
   assert.equal(resolved.license.spdxId, "CC0-1.0");
-  console.log("Asset catalog verification passed: manifest, license allowlist, provenance, and SHA-256 are enforced.");
+  console.log("Asset catalog verification passed: bundled aliases, manifest, license allowlist, provenance, and SHA-256 are enforced.");
 } finally {
   await close(server);
 }

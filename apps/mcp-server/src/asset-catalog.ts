@@ -16,6 +16,15 @@ const supportedKinds = ["model", "texture", "audio"] as const;
 const maximumManifestBytes = 2 * 1024 * 1024;
 const maximumAssetBytes = 2 * 1024 * 1024 * 1024;
 const cacheDurationMs = 5 * 60 * 1_000;
+const queryAliasGroups = [
+  ["vehicle", "car", "auto", "automobile", "truck", "van", "racing", "transport"],
+  ["character", "humanoid", "avatar", "player", "npc", "enemy", "person"],
+  ["environment", "level", "platform", "floor", "ground", "stage", "terrain"],
+  ["foliage", "tree", "plant", "vegetation", "nature"],
+  ["prop", "crate", "box", "pickup", "collectible", "item"],
+  ["audio", "sound", "sfx", "music"],
+  ["texture", "material", "surface", "albedo"]
+] as const;
 const httpsUrlSchema = z.string().url().max(4096).refine(
   (value) => new URL(value).protocol === "https:",
   "Expected an HTTPS URL."
@@ -112,7 +121,7 @@ export class AssetCatalogService {
 
   async search(input: CatalogSearchInput = {}) {
     const loaded = await this.loadAll(input.refresh === true);
-    const query = normalize(input.query);
+    const queryGroups = expandQueryGroups(input.query);
     const kind = input.kind ?? "all";
     const tags = (input.tags ?? []).map(normalize).filter(Boolean);
     const maxResults = clampInteger(input.maxResults ?? 50, 1, 200);
@@ -128,7 +137,7 @@ export class AssetCatalogService {
         asset.catalogName,
         ...asset.tags
       ].join(" "));
-      if (query && !searchable.includes(query)) {
+      if (queryGroups.length > 0 && !queryGroups.every((group) => group.some((term) => searchable.includes(term)))) {
         return false;
       }
 
@@ -239,6 +248,34 @@ function loadBundledAssets(): ResolvedCatalogAsset[] {
       description: "A lightweight CC0 OBJ ramp for level blockout and physics workflow validation.",
       fileName: "starter-ramp.obj",
       tags: ["ramp", "level", "prototype", "environment"]
+    }),
+    bundledAsset(catalogRoot, {
+      id: "starter-vehicle",
+      name: "Starter Vehicle",
+      description: "A lightweight CC0 low-poly vehicle blockout with body and wheels for racing, traffic, transport, and gameplay prototype workflows.",
+      fileName: "starter-vehicle.obj",
+      tags: ["vehicle", "car", "truck", "racing", "transport", "prototype", "blockout"]
+    }),
+    bundledAsset(catalogRoot, {
+      id: "starter-character",
+      name: "Starter Character",
+      description: "A lightweight CC0 humanoid character blockout for player, NPC, enemy, and animation placeholder workflows.",
+      fileName: "starter-character.obj",
+      tags: ["character", "humanoid", "avatar", "player", "npc", "enemy", "prototype", "blockout"]
+    }),
+    bundledAsset(catalogRoot, {
+      id: "starter-tree",
+      name: "Starter Tree",
+      description: "A lightweight CC0 tree and foliage blockout for environment dressing and level composition.",
+      fileName: "starter-tree.obj",
+      tags: ["tree", "plant", "foliage", "vegetation", "nature", "environment", "prototype"]
+    }),
+    bundledAsset(catalogRoot, {
+      id: "starter-platform",
+      name: "Starter Platform",
+      description: "A lightweight CC0 modular floor platform for level blockout, spawn areas, and obstacle layouts.",
+      fileName: "starter-platform.obj",
+      tags: ["platform", "floor", "ground", "level", "environment", "terrain", "prototype", "modular"]
     })
   ];
 }
@@ -287,6 +324,22 @@ function validateDownloadUrl(rawUrl: string, allowInsecureLocalhost: boolean): s
   }
 
   return url.toString();
+}
+
+function expandQueryGroups(rawQuery: string | undefined): string[][] {
+  const normalized = normalize(rawQuery);
+  if (!normalized) {
+    return [];
+  }
+
+  return normalized
+    .split(/[^a-z0-9._-]+/u)
+    .map((term) => term.trim())
+    .filter(Boolean)
+    .map((term) => {
+      const group = queryAliasGroups.find((aliases) => (aliases as readonly string[]).includes(term));
+      return [...new Set([term, ...(group ?? [])])];
+    });
 }
 
 async function fetchJsonManifest(rawUrl: string, allowInsecureLocalhost: boolean): Promise<unknown> {
