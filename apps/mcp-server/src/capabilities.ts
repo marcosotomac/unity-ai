@@ -86,6 +86,13 @@ export const initialCapabilities: CapabilityManifest[] = [
     verification: ["structured_observation"]
   },
   {
+    name: "unity.ui.audit",
+    description: "Audit active-scene UI for Canvas, scaler, EventSystem, contrast, layout, labels, and agent-action markers.",
+    permissions: ["read_scenes"],
+    effects: ["report_only"],
+    verification: ["structured_observation", "ui_audit_completed", "ui_quality_gate_passed"]
+  },
+  {
     name: "unity.scene.upsert_game_object",
     description: "Create or update a GameObject in the active scene from a safe, schema-bound spec.",
     permissions: ["modify_scenes"],
@@ -98,6 +105,13 @@ export const initialCapabilities: CapabilityManifest[] = [
     permissions: ["read_assets", "modify_scenes"],
     effects: ["report_only", "write_audit_log", "scene_change"],
     verification: ["operation_audited", "structured_observation", "scene_mutation_verified", "batch_applied", "component_state_verified"]
+  },
+  {
+    name: "unity.ui.compose",
+    description: "Create or replace high-quality Canvas UI screens with responsive layout, EventSystem, readable contrast, semantic action markers, audit, and rollback.",
+    permissions: ["read_scenes", "modify_scenes"],
+    effects: ["report_only", "write_checkpoint", "write_audit_log", "scene_change"],
+    verification: ["operation_audited", "structured_observation", "checkpoint_created", "ui_screen_composed", "ui_audit_completed", "ui_quality_gate_passed", "scene_mutation_verified", "rollback_verified"]
   },
   {
     name: "unity.gameplay.compose",

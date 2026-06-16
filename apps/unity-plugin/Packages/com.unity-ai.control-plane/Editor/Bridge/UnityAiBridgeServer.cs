@@ -583,10 +583,14 @@ namespace UnityAI.ControlPlane.Editor
                     return JsonResult(capability, envelope, GameObjectInspector.Inspect(requestBody));
                 case "unity.physics.inspect":
                     return JsonResult(capability, envelope, PhysicsInspector.Inspect(requestBody));
+                case "unity.ui.audit":
+                    return JsonResult(capability, envelope, UiComposeOperation.Audit(requestBody));
                 case "unity.scene.upsert_game_object":
                     return JsonResult(capability, envelope, SceneUpsertGameObjectOperation.Execute(requestBody));
                 case "unity.scene.batch":
                     return JsonResult(capability, envelope, SceneBatchOperation.Execute(requestBody));
+                case "unity.ui.compose":
+                    return JsonResult(capability, envelope, UiComposeOperation.Compose(requestBody));
                 case "unity.gameplay.compose":
                     return JsonResult(capability, envelope, GameplayComposeOperation.Execute(requestBody));
                 case "unity.prefabs.list":
@@ -715,6 +719,7 @@ namespace UnityAI.ControlPlane.Editor
                 case "unity.console.apply_fix":
                 case "unity.scene.upsert_game_object":
                 case "unity.scene.batch":
+                case "unity.ui.compose":
                 case "unity.gameplay.compose":
                 case "unity.project.settings.update":
                 case "unity.packages.change":

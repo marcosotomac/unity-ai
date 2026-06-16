@@ -242,11 +242,92 @@ server.registerTool(
   async (input) => bridgeTool("unity.physics.inspect", input)
 );
 
+server.registerTool(
+  "unity.ui.audit",
+  {
+    description: "Audit active-scene UI for Canvas, CanvasScaler, EventSystem/input modules, contrast, labels, button action markers, and layout quality.",
+    inputSchema: z.object({
+      pathPrefix: z.string().max(512).default(""),
+      includeInactive: z.boolean().default(true),
+      maxElements: z.number().int().min(1).max(1000).default(200),
+      maxFindings: z.number().int().min(1).max(1000).default(200),
+      minContrastRatio: z.number().finite().min(1).max(21).default(4.5)
+    }).strict()
+  },
+  async (input) => bridgeTool("unity.ui.audit", input)
+);
+
 const sceneVectorSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
   z: z.number().finite()
 }).strict();
+
+const uiThemeSchema = z.object({
+  background: z.string().min(4).max(16).default("#0F172AF2"),
+  panel: z.string().min(4).max(16).default("#111827E6"),
+  primary: z.string().min(4).max(16).default("#2563EBFF"),
+  secondary: z.string().min(4).max(16).default("#334155FF"),
+  accent: z.string().min(4).max(16).default("#F59E0BFF"),
+  text: z.string().min(4).max(16).default("#F8FAFCFF"),
+  mutedText: z.string().min(4).max(16).default("#CBD5E1FF"),
+  danger: z.string().min(4).max(16).default("#DC2626FF"),
+  baseFontSize: z.number().int().min(12).max(120).default(28),
+  titleFontSize: z.number().int().min(18).max(180).default(72),
+  buttonFontSize: z.number().int().min(12).max(120).default(30),
+  safeAreaMargin: z.number().finite().min(0).max(320).default(80)
+}).strict();
+
+const uiButtonSchema = z.object({
+  name: z.string().min(1).max(80).optional(),
+  text: z.string().min(1).max(120),
+  actionId: z.string().min(1).max(120).optional(),
+  intent: z.string().max(400).default(""),
+  variant: z.enum(["primary", "secondary", "accent", "danger"]).default("primary")
+}).strict();
+
+const uiStatSchema = z.object({
+  name: z.string().min(1).max(80).optional(),
+  label: z.string().min(1).max(80),
+  value: z.string().min(1).max(80)
+}).strict();
+
+const uiLabelSchema = z.object({
+  name: z.string().min(1).max(80).optional(),
+  text: z.string().min(1).max(400),
+  slot: z.enum(["body", "header", "footer", "aside"]).default("body"),
+  fontSize: z.number().int().min(0).max(120).default(0)
+}).strict();
+
+server.registerTool(
+  "unity.ui.compose",
+  {
+    description: "Create or replace a production-quality Canvas UI screen from templates with responsive layout, readable contrast, EventSystem, action markers, audit, and rollback on quality failure.",
+    inputSchema: z.object({
+      dryRun: z.boolean().default(true),
+      confirm: z.boolean().default(false),
+      mode: z.enum(["create", "upsert", "replace"]).default("upsert"),
+      template: z.enum(["main_menu", "pause_menu", "hud", "dialog", "blank"]).default("main_menu"),
+      canvasName: z.string().min(1).max(80).default("Unity AI UI Canvas"),
+      screenName: z.string().min(1).max(80).default("Unity AI Screen"),
+      screenId: z.string().min(1).max(120).default("unity-ai-screen"),
+      title: z.string().min(1).max(160).default("New Screen"),
+      subtitle: z.string().max(400).default(""),
+      body: z.string().max(400).default(""),
+      referenceWidth: z.number().int().min(320).max(8192).default(1920),
+      referenceHeight: z.number().int().min(240).max(8192).default(1080),
+      matchWidthOrHeight: z.number().finite().min(0).max(1).default(0.5),
+      ensureEventSystem: z.boolean().default(true),
+      createActionMarkers: z.boolean().default(true),
+      enforceReadableContrast: z.boolean().default(true),
+      theme: uiThemeSchema.default({}),
+      buttons: z.array(uiButtonSchema).max(12).default([]),
+      stats: z.array(uiStatSchema).max(12).default([]),
+      labels: z.array(uiLabelSchema).max(24).default([])
+    }).strict()
+  },
+  async (input) => bridgeTool("unity.ui.compose", input)
+);
 
 server.registerTool(
   "unity.scene.upsert_game_object",

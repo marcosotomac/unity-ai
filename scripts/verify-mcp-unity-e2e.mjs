@@ -507,6 +507,17 @@ function assertCapabilities(capabilities) {
     fail("unity.physics.inspect must be a read-only scene inspection capability.");
   }
 
+  const uiAuditCapability = capabilities.find((capability) => capability.name === "unity.ui.audit");
+  if (!uiAuditCapability || !uiAuditCapability.permissions.includes("read_scenes") || !uiAuditCapability.effects.includes("report_only")) {
+    fail("unity.ui.audit must be a read-only scene UI quality capability.");
+  }
+
+  for (const signal of ["ui_audit_completed", "ui_quality_gate_passed"]) {
+    if (!uiAuditCapability.verification.includes(signal)) {
+      fail(`unity.ui.audit must declare ${signal}.`);
+    }
+  }
+
   const sceneBatchCapability = capabilities.find((capability) => capability.name === "unity.scene.batch");
   if (!sceneBatchCapability) {
     fail("unity.capabilities.list did not include unity.scene.batch.");
@@ -523,6 +534,23 @@ function assertCapabilities(capabilities) {
   for (const signal of ["scene_mutation_verified", "batch_applied", "component_state_verified"]) {
     if (!sceneBatchCapability.verification.includes(signal)) {
       fail(`unity.scene.batch must declare ${signal} verification.`);
+    }
+  }
+
+  const uiComposeCapability = capabilities.find((capability) => capability.name === "unity.ui.compose");
+  if (!uiComposeCapability) {
+    fail("unity.capabilities.list did not include unity.ui.compose.");
+  }
+
+  for (const permission of ["read_scenes", "modify_scenes"]) {
+    if (!uiComposeCapability.permissions.includes(permission)) {
+      fail(`unity.ui.compose must declare ${permission}.`);
+    }
+  }
+
+  for (const signal of ["checkpoint_created", "ui_screen_composed", "ui_audit_completed", "ui_quality_gate_passed", "scene_mutation_verified", "rollback_verified"]) {
+    if (!uiComposeCapability.verification.includes(signal)) {
+      fail(`unity.ui.compose must declare ${signal}.`);
     }
   }
 

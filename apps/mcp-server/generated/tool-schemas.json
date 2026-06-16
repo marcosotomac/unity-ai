@@ -4436,6 +4436,340 @@
       }
     },
     {
+      "name": "unity.ui.audit",
+      "description": "Audit active-scene UI for Canvas, CanvasScaler, EventSystem/input modules, contrast, labels, button action markers, and layout quality.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pathPrefix": {
+            "type": "string",
+            "maxLength": 512,
+            "default": ""
+          },
+          "includeInactive": {
+            "type": "boolean",
+            "default": true
+          },
+          "maxElements": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 200
+          },
+          "maxFindings": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 200
+          },
+          "minContrastRatio": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 21,
+            "default": 4.5
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.ui.compose",
+      "description": "Create or replace a production-quality Canvas UI screen from templates with responsive layout, readable contrast, EventSystem, action markers, audit, and rollback on quality failure.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "default": true
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "create",
+              "upsert",
+              "replace"
+            ],
+            "default": "upsert"
+          },
+          "template": {
+            "type": "string",
+            "enum": [
+              "main_menu",
+              "pause_menu",
+              "hud",
+              "dialog",
+              "blank"
+            ],
+            "default": "main_menu"
+          },
+          "canvasName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "default": "Unity AI UI Canvas"
+          },
+          "screenName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "default": "Unity AI Screen"
+          },
+          "screenId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "default": "unity-ai-screen"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "default": "New Screen"
+          },
+          "subtitle": {
+            "type": "string",
+            "maxLength": 400,
+            "default": ""
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 400,
+            "default": ""
+          },
+          "referenceWidth": {
+            "type": "integer",
+            "minimum": 320,
+            "maximum": 8192,
+            "default": 1920
+          },
+          "referenceHeight": {
+            "type": "integer",
+            "minimum": 240,
+            "maximum": 8192,
+            "default": 1080
+          },
+          "matchWidthOrHeight": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0.5
+          },
+          "ensureEventSystem": {
+            "type": "boolean",
+            "default": true
+          },
+          "createActionMarkers": {
+            "type": "boolean",
+            "default": true
+          },
+          "enforceReadableContrast": {
+            "type": "boolean",
+            "default": true
+          },
+          "theme": {
+            "type": "object",
+            "properties": {
+              "background": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 16,
+                "default": "#0F172AF2"
+              },
+              "panel": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 16,
+                "default": "#111827E6"
+              },
+              "primary": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 16,
+                "default": "#2563EBFF"
+              },
+              "secondary": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 16,
+                "default": "#334155FF"
+              },
+              "accent": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 16,
+                "default": "#F59E0BFF"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 16,
+                "default": "#F8FAFCFF"
+              },
+              "mutedText": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 16,
+                "default": "#CBD5E1FF"
+              },
+              "danger": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 16,
+                "default": "#DC2626FF"
+              },
+              "baseFontSize": {
+                "type": "integer",
+                "minimum": 12,
+                "maximum": 120,
+                "default": 28
+              },
+              "titleFontSize": {
+                "type": "integer",
+                "minimum": 18,
+                "maximum": 180,
+                "default": 72
+              },
+              "buttonFontSize": {
+                "type": "integer",
+                "minimum": 12,
+                "maximum": 120,
+                "default": 30
+              },
+              "safeAreaMargin": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 320,
+                "default": 80
+              }
+            },
+            "additionalProperties": false,
+            "default": {}
+          },
+          "buttons": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "actionId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "intent": {
+                  "type": "string",
+                  "maxLength": 400,
+                  "default": ""
+                },
+                "variant": {
+                  "type": "string",
+                  "enum": [
+                    "primary",
+                    "secondary",
+                    "accent",
+                    "danger"
+                  ],
+                  "default": "primary"
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 12,
+            "default": []
+          },
+          "stats": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                }
+              },
+              "required": [
+                "label",
+                "value"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 12,
+            "default": []
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 400
+                },
+                "slot": {
+                  "type": "string",
+                  "enum": [
+                    "body",
+                    "header",
+                    "footer",
+                    "aside"
+                  ],
+                  "default": "body"
+                },
+                "fontSize": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 120,
+                  "default": 0
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 24,
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
       "name": "unity.vision.capture",
       "description": "Synchronously capture a Scene View or Game View screenshot and return only after the PNG is verified ready.",
       "parameters": {

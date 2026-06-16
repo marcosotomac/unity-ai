@@ -13,6 +13,9 @@
     "Meta XR",
     "Editor"
   ],
+  "dependencies": {
+    "com.unity.ugui": "1.0.0"
+  },
   "author": {
     "name": "Unity AI Control Plane Contributors"
   }

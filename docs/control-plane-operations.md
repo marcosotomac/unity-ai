@@ -92,6 +92,10 @@ Imported objects can be composed through `unity.scene.batch` with built-in, proj
 
 `unity.scripts.author` extends composition to custom runtime behaviours. It requires a validated dry-run SHA-256, creates a durable checkpoint, blocks high-risk API families and edit-time execution, waits across Unity domain reloads, verifies the compiled `MonoBehaviour`, optionally attaches it, and restores the checkpoint on failure.
 
+`unity.ui.compose` creates or replaces screen-space Canvas UI screens from bounded templates (`main_menu`, `pause_menu`, `hud`, `dialog`, and `blank`). It configures `CanvasScaler`, `GraphicRaycaster`, EventSystem/input modules for interactive templates, responsive safe-area layout, readable theme contrast, and semantic `UnityAiUiScreenMarker` / `UnityAiUiActionMarker` components. Confirmed mutations run in one Undo group, create a durable scene checkpoint when the scene is saved, then run `unity.ui.audit`; quality-gate errors roll the UI mutation back.
+
+`unity.ui.audit` is the read-only UI quality gate. It reports Canvas/scaler/raycaster coverage, EventSystem health, text contrast, zero-size RectTransforms, button labels, action markers, bounded element summaries, a score, and recommended fixes.
+
 `unity.gameplay.compose` operates one level above component editing. It configures reusable proximity doors, pickups, and activators, resolves direct scene references, checkpoints the saved scene, applies all requested templates atomically, and verifies the resulting component state.
 
 `unity.prefab.manage` supports:

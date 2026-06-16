@@ -76,7 +76,10 @@ export type VerificationSignal =
   | "asset_hash_verified"
   | "script_source_validated"
   | "script_compilation_verified"
-  | "gameplay_template_applied";
+  | "gameplay_template_applied"
+  | "ui_audit_completed"
+  | "ui_screen_composed"
+  | "ui_quality_gate_passed";
 
 export interface CapabilityManifest {
   readonly name: CapabilityName;

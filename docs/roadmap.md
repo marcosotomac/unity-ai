@@ -85,7 +85,8 @@ Verified tools:
 - [ ] Inspect and automatically wire imported materials and texture maps.
 - [ ] Add humanoid avatar configuration, animation retargeting, masks, and blend-tree authoring.
 - [x] Add license-aware asset catalog manifests, CDN adapters, and provenance metadata.
-- [ ] Add higher-level UI, contextual audio, dialogue, quest, inventory, and XR interaction templates.
+- [x] Add higher-level UI scene composition and audit templates.
+- [ ] Add contextual audio, dialogue, quest, inventory, and XR interaction templates.
 
 ## Milestone 4 — Meta XR readiness
 
