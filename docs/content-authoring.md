@@ -22,7 +22,11 @@ acquire → import → configure → instantiate → animate → add behaviour �
     "globalScale": 1,
     "animationType": "generic",
     "importAnimation": true,
-    "addCollider": false
+    "addCollider": false,
+    "normalizeOnInstantiate": true,
+    "pivotMode": "bounds_base",
+    "alignToGround": true,
+    "forwardAxis": "keep"
   },
   "instantiate": true,
   "objectName": "Robot",
@@ -34,9 +38,11 @@ Remote production imports require HTTPS. Every transfer is bounded by `maxBytes`
 
 FBX, OBJ, DAE, 3DS, and DXF use Unity's built-in model importer. GLB/glTF paths are accepted when the project has a compatible glTF importer package installed.
 
+When `instantiate=true`, model imports can create a normalized editor root for any 3D model. `normalizeOnInstantiate`, `recenterPivot`, `pivotMode`, `alignToGround`, and `forwardAxis` let the agent fix offset pivots, ground alignment, and local forward-axis mismatches before saving a prefab. This is generic and should be used for vehicles, characters, props, environment pieces, and any other imported model that arrives with awkward bounds or axes.
+
 ## Search and import a catalog asset
 
-`unity.assets.catalog.search` always includes the bundled starter catalog. Additional HTTPS/CDN manifests can be configured with the comma-separated `UNITY_AI_ASSET_CATALOG_URLS` environment variable. Only `CC0-1.0` entries are accepted by default; override the allowlist explicitly with `UNITY_AI_ASSET_CATALOG_ALLOWED_LICENSES`.
+`unity.assets.catalog.search` always includes the bundled starter catalog. It contains small CC0 starter models across generic families such as props, ramps, platforms, vehicles, characters, and foliage. Search expands common aliases, so a query like `car` can match the vehicle category and a query like `npc` can match character placeholders. Additional HTTPS/CDN manifests can be configured with the comma-separated `UNITY_AI_ASSET_CATALOG_URLS` environment variable. Only `CC0-1.0` entries are accepted by default; override the allowlist explicitly with `UNITY_AI_ASSET_CATALOG_ALLOWED_LICENSES`.
 
 Each remote manifest entry must include a direct supported file URL, source URL, SPDX license, byte size, and SHA-256. Import does not accept an arbitrary URL from the tool caller:
 

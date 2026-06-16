@@ -62,6 +62,7 @@ verification:
 | `unity.scenes.*` | List Unity scenes. |
 | `unity.scene.*` | Inspect filtered hierarchy/component state and apply controlled, atomic scene authoring batches. |
 | `unity.physics.*` | Inspect bounded 3D/2D bodies, colliders, overlaps, impact speed, and sampled force estimates. |
+| `unity.runtime.*` | Capture compact runtime/edit-mode telemetry for scene objects, transforms, bounds, and rigidbodies. |
 | `unity.gameplay.*` | Compose high-level doors, pickups, and activators from existing scene objects. |
 | `unity.scripts.*` | Inspect C# scripts or author gated runtime `MonoBehaviour` components with compile verification. |
 | `unity.assemblies.*` | Inspect Unity script assemblies. |

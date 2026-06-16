@@ -56,6 +56,7 @@ The bridge handles:
 - `POST /capabilities/unity.scene.inspect`
 - `POST /capabilities/unity.scene.inspect_game_object`
 - `POST /capabilities/unity.physics.inspect`
+- `POST /capabilities/unity.runtime.telemetry`
 - `POST /capabilities/unity.ui.audit`
 - `POST /capabilities/unity.scene.upsert_game_object`
 - `POST /capabilities/unity.scene.batch`
@@ -78,6 +79,7 @@ The bridge handles:
 - `POST /capabilities/unity.build.validate_android_quest`
 - `POST /capabilities/unity.build.android`
 - `POST /capabilities/unity.assets.author`
+- `POST /capabilities/unity.assets.import`
 - `POST /capabilities/unity.assets.import_from_catalog`
 - `POST /capabilities/unity.prefab.manage`
 - `POST /capabilities/unity.checkpoints.create|list|restore|delete`

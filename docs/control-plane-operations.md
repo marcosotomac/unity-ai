@@ -16,6 +16,7 @@ Terminal states are `succeeded`, `failed`, and `cancelled`. Successful jobs incl
 
 - `unity.tests.run`: Edit Mode or Play Mode filters, confirmation, persistent state, XML results under `UnityAIArtifacts/TestResults`, and optional frame-timed keyboard/mouse/gamepad events for the new Input System.
 - `unity.physics.inspect`: bounded 3D/2D body and collider inspection, overlap diagnostics, relative impact speed, and sampled net-force estimates.
+- `unity.runtime.telemetry`: compact runtime/edit-mode object telemetry for transforms, bounds, rigidbodies, velocities, scene time, and filtered subsets.
 - `unity.compilation.wait`: optional asset refresh, timeout, stable-frame settling, and maximum accepted console error count.
 - `unity.playmode.control`: `enter`, `exit`, `pause`, `resume`, or `step`.
 
@@ -84,9 +85,11 @@ UnityAIArtifacts/Builds
 - FBX, OBJ, DAE, 3DS, and DXF model import, plus GLB/glTF when a compatible importer package is installed;
 - common texture and audio formats;
 - `ModelImporter`, `TextureImporter`, and `AudioImporter` settings;
-- optional scene instantiation and prefab creation.
+- optional scene instantiation, generic model normalization, and prefab creation.
 
-`unity.assets.catalog.search` and `unity.assets.import_from_catalog` add a manifest-backed acquisition layer. Catalog entries are license-allowlisted, hash-bound, size-bound, and audited with their provenance; direct arbitrary URLs are not accepted by the catalog import tool.
+`unity.assets.catalog.search` and `unity.assets.import_from_catalog` add a manifest-backed acquisition layer. The bundled catalog includes CC0 starter models across generic categories and query aliases; remote catalog entries are license-allowlisted, hash-bound, size-bound, and audited with their provenance. Direct arbitrary URLs are not accepted by the catalog import tool.
+
+`unity.project.settings.inspect` reports tags, layers, render pipeline, and input-system mode. `unity.project.settings.update` can add tags, add user layers, and set Active Input Handling (`legacy`, `input_system`, or `both`) with a durable checkpoint before scripts or scene objects depend on those settings.
 
 Imported objects can be composed through `unity.scene.batch` with built-in, project, or package components. The package includes `ContinuousRotation`, `BobbingMotion`, and `PulseScale` runtime behaviours.
 
