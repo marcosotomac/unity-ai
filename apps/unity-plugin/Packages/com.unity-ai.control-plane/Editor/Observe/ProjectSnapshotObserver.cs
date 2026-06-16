@@ -392,6 +392,7 @@ namespace UnityAI.ControlPlane.Editor
                 Capability("unity.scene.inspect", "read"),
                 Capability("unity.scene.inspect_game_object", "read"),
                 Capability("unity.physics.inspect", "read"),
+                Capability("unity.runtime.telemetry", "read"),
                 Capability("unity.scene.upsert_game_object", "mutating_token_required"),
                 Capability("unity.scene.batch", "mutating_token_required"),
                 Capability("unity.prefabs.list", "read"),

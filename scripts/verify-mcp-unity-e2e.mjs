@@ -507,6 +507,14 @@ function assertCapabilities(capabilities) {
     fail("unity.physics.inspect must be a read-only scene inspection capability.");
   }
 
+  const runtimeTelemetryCapability = capabilities.find((capability) => capability.name === "unity.runtime.telemetry");
+  if (!runtimeTelemetryCapability
+      || !runtimeTelemetryCapability.permissions.includes("read_scenes")
+      || !runtimeTelemetryCapability.effects.includes("report_only")
+      || !runtimeTelemetryCapability.verification.includes("runtime_telemetry_captured")) {
+    fail("unity.runtime.telemetry must be a read-only telemetry capability with runtime_telemetry_captured verification.");
+  }
+
   const uiAuditCapability = capabilities.find((capability) => capability.name === "unity.ui.audit");
   if (!uiAuditCapability || !uiAuditCapability.permissions.includes("read_scenes") || !uiAuditCapability.effects.includes("report_only")) {
     fail("unity.ui.audit must be a read-only scene UI quality capability.");
@@ -583,7 +591,7 @@ function assertCapabilities(capabilities) {
     }
   }
 
-  for (const signal of ["asset_import_verified", "checkpoint_created", "operation_audited"]) {
+  for (const signal of ["asset_import_verified", "asset_normalized", "checkpoint_created", "operation_audited"]) {
     if (!assetImportCapability.verification.includes(signal)) {
       fail(`unity.assets.import must declare ${signal}.`);
     }
@@ -1347,6 +1355,23 @@ async function assertSceneBatchFlow(client) {
       || !Array.isArray(physics.overlaps)
       || !physics.overlaps.some((overlap) => overlap.dimension === "3d" && overlap.relativeNormalSpeed >= 0)) {
     fail(`physics inspection did not expose bodies and overlap diagnostics: ${JSON.stringify(physics)}.`);
+  }
+
+  const telemetry = await callJsonTool(client, "unity.runtime.telemetry", {
+    pathPrefix: "UnityAiBatchRoot",
+    includeInactive: true,
+    includeRenderers: true,
+    includeColliders: true,
+    includeRigidbodies: true,
+    maxObjects: 20
+  });
+  if (!Array.isArray(telemetry.verificationSignals)
+      || !telemetry.verificationSignals.includes("runtime_telemetry_captured")
+      || telemetry.returnedGameObjectCount < 2
+      || !Array.isArray(telemetry.objects)
+      || !telemetry.objects.some((item) => item.path === "UnityAiBatchRoot/UnityAiE2ECube" && item.body3D?.dimension === "3d")
+      || !telemetry.objects.some((item) => item.rendererBounds != null || item.colliderBounds != null)) {
+    fail(`runtime telemetry did not expose bounded object telemetry: ${JSON.stringify(telemetry)}.`);
   }
 
   const deactivated = await callJsonTool(client, "unity.scene.batch", {

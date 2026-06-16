@@ -86,6 +86,13 @@ export const initialCapabilities: CapabilityManifest[] = [
     verification: ["structured_observation"]
   },
   {
+    name: "unity.runtime.telemetry",
+    description: "Capture compact per-object runtime telemetry for transforms, render bounds, collider bounds, rigidbodies, velocities, and scene time.",
+    permissions: ["read_scenes"],
+    effects: ["report_only"],
+    verification: ["structured_observation", "runtime_telemetry_captured"]
+  },
+  {
     name: "unity.ui.audit",
     description: "Audit active-scene UI for Canvas, scaler, EventSystem, contrast, layout, labels, and agent-action markers.",
     permissions: ["read_scenes"],
@@ -178,14 +185,14 @@ export const initialCapabilities: CapabilityManifest[] = [
   },
   {
     name: "unity.project.settings.inspect",
-    description: "Inspect high-level Unity project and player settings.",
+    description: "Inspect high-level Unity project, player settings, tags, layers, render pipeline, and input-system mode.",
     permissions: ["read_project_settings"],
     effects: ["report_only"],
     verification: ["structured_observation"]
   },
   {
     name: "unity.project.settings.update",
-    description: "Update selected Project, Player, Android, and Build Settings with a durable checkpoint.",
+    description: "Update selected Project, Player, Android, tag, layer, input, and Build Settings with a durable checkpoint.",
     permissions: ["read_project_settings", "modify_project_settings"],
     effects: ["write_checkpoint", "project_setting_change"],
     verification: ["checkpoint_created", "project_settings_verified"]
@@ -269,10 +276,10 @@ export const initialCapabilities: CapabilityManifest[] = [
   },
   {
     name: "unity.assets.import",
-    description: "Copy or download models, textures, and audio into Assets, configure Unity importers, and optionally instantiate or save a prefab.",
+    description: "Copy or download models, textures, and audio into Assets, configure Unity importers, and optionally instantiate, normalize, or save a prefab.",
     permissions: ["read_external_files", "network_access", "read_assets", "modify_assets", "modify_scenes", "write_artifacts"],
     effects: ["write_checkpoint", "write_audit_log", "asset_change", "scene_change"],
-    verification: ["checkpoint_created", "operation_audited", "asset_import_verified", "scene_mutation_verified", "prefab_mutation_verified"]
+    verification: ["checkpoint_created", "operation_audited", "asset_import_verified", "asset_normalized", "scene_mutation_verified", "prefab_mutation_verified"]
   },
   {
     name: "unity.assets.catalog.search",
@@ -283,10 +290,10 @@ export const initialCapabilities: CapabilityManifest[] = [
   },
   {
     name: "unity.assets.import_from_catalog",
-    description: "Resolve and import a catalog asset with enforced license, provenance, byte limit, and SHA-256 verification.",
+    description: "Resolve and import a catalog asset with enforced license, provenance, byte limit, SHA-256 verification, and optional model normalization.",
     permissions: ["network_access", "read_external_files", "read_assets", "modify_assets", "modify_scenes", "write_artifacts"],
     effects: ["write_checkpoint", "write_audit_log", "asset_change", "scene_change"],
-    verification: ["asset_license_verified", "asset_hash_verified", "checkpoint_created", "operation_audited", "asset_import_verified", "scene_mutation_verified", "prefab_mutation_verified"]
+    verification: ["asset_license_verified", "asset_hash_verified", "checkpoint_created", "operation_audited", "asset_import_verified", "asset_normalized", "scene_mutation_verified", "prefab_mutation_verified"]
   },
   {
     name: "unity.prefab.manage",

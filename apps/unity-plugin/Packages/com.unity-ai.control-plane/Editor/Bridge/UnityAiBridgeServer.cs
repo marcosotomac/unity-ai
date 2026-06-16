@@ -583,6 +583,8 @@ namespace UnityAI.ControlPlane.Editor
                     return JsonResult(capability, envelope, GameObjectInspector.Inspect(requestBody));
                 case "unity.physics.inspect":
                     return JsonResult(capability, envelope, PhysicsInspector.Inspect(requestBody));
+                case "unity.runtime.telemetry":
+                    return JsonResult(capability, envelope, RuntimeTelemetryObserver.Capture(requestBody));
                 case "unity.ui.audit":
                     return JsonResult(capability, envelope, UiComposeOperation.Audit(requestBody));
                 case "unity.scene.upsert_game_object":

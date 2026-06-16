@@ -558,7 +558,7 @@
     },
     {
       "name": "unity.assets.import",
-      "description": "Copy or download a model, texture, or audio file, apply importer settings, and optionally instantiate it or save a prefab.",
+      "description": "Copy or download a model, texture, or audio file, apply importer settings, and optionally instantiate, normalize model pivots/axes, or save a prefab.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -677,6 +677,41 @@
                   "high"
                 ],
                 "default": "off"
+              },
+              "normalizeOnInstantiate": {
+                "type": "boolean",
+                "default": false
+              },
+              "recenterPivot": {
+                "type": "boolean",
+                "default": false
+              },
+              "pivotMode": {
+                "type": "string",
+                "enum": [
+                  "bounds_center",
+                  "bounds_base"
+                ],
+                "default": "bounds_center"
+              },
+              "alignToGround": {
+                "type": "boolean",
+                "default": false
+              },
+              "forwardAxis": {
+                "type": "string",
+                "enum": [
+                  "keep",
+                  "z",
+                  "+z",
+                  "-z",
+                  "negative_z",
+                  "x",
+                  "+x",
+                  "-x",
+                  "negative_x"
+                ],
+                "default": "keep"
               }
             },
             "additionalProperties": false
@@ -841,7 +876,7 @@
     },
     {
       "name": "unity.assets.import_from_catalog",
-      "description": "Resolve a license-allowlisted catalog asset, enforce its declared SHA-256 and size, import it through Unity, and retain provenance in the audit result.",
+      "description": "Resolve a license-allowlisted catalog asset, enforce its declared SHA-256 and size, import it through Unity, optionally normalize models, and retain provenance in the audit result.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -947,6 +982,41 @@
                   "high"
                 ],
                 "default": "off"
+              },
+              "normalizeOnInstantiate": {
+                "type": "boolean",
+                "default": false
+              },
+              "recenterPivot": {
+                "type": "boolean",
+                "default": false
+              },
+              "pivotMode": {
+                "type": "string",
+                "enum": [
+                  "bounds_center",
+                  "bounds_base"
+                ],
+                "default": "bounds_center"
+              },
+              "alignToGround": {
+                "type": "boolean",
+                "default": false
+              },
+              "forwardAxis": {
+                "type": "string",
+                "enum": [
+                  "keep",
+                  "z",
+                  "+z",
+                  "-z",
+                  "negative_z",
+                  "x",
+                  "+x",
+                  "-x",
+                  "negative_x"
+                ],
+                "default": "keep"
               }
             },
             "additionalProperties": false
@@ -2851,7 +2921,7 @@
     },
     {
       "name": "unity.project.settings.inspect",
-      "description": "Inspect high-level Unity project and player settings.",
+      "description": "Inspect high-level Unity project, player settings, tags, layers, render pipeline, and input-system mode.",
       "parameters": {
         "type": "object",
         "properties": {},
@@ -2861,7 +2931,7 @@
     },
     {
       "name": "unity.project.settings.update",
-      "description": "Update selected Project Settings, Android Player Settings, and Build Settings with a durable checkpoint.",
+      "description": "Update selected Project Settings, Android Player Settings, tags, layers, Active Input Handling, and Build Settings with a durable checkpoint.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -2935,6 +3005,35 @@
           "connectProfiler": {
             "type": "boolean"
           },
+          "addTags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "maxItems": 200
+          },
+          "addLayers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "maxItems": 24
+          },
+          "activeInputHandling": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "old",
+              "input_manager",
+              "new",
+              "input_system",
+              "both"
+            ]
+          },
           "scenes": {
             "type": "array",
             "items": {
@@ -2968,6 +3067,103 @@
       "parameters": {
         "type": "object",
         "properties": {},
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "unity.runtime.telemetry",
+      "description": "Capture compact per-object runtime telemetry for transforms, renderer/collider bounds, rigidbodies, velocities, and scene time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pathPrefix": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "includeInactive": {
+            "type": "boolean",
+            "default": false
+          },
+          "withinRadius": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "centerPath": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "radius": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100000
+                  }
+                },
+                "required": [
+                  "centerPath",
+                  "radius"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "center": {
+                    "type": "object",
+                    "properties": {
+                      "x": {
+                        "type": "number"
+                      },
+                      "y": {
+                        "type": "number"
+                      },
+                      "z": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "x",
+                      "y",
+                      "z"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "radius": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100000
+                  }
+                },
+                "required": [
+                  "center",
+                  "radius"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "includeRenderers": {
+            "type": "boolean",
+            "default": true
+          },
+          "includeColliders": {
+            "type": "boolean",
+            "default": true
+          },
+          "includeRigidbodies": {
+            "type": "boolean",
+            "default": true
+          },
+          "maxObjects": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 200
+          }
+        },
         "additionalProperties": false,
         "$schema": "http://json-schema.org/draft-07/schema#"
       }

@@ -243,6 +243,36 @@ server.registerTool(
 );
 
 server.registerTool(
+  "unity.runtime.telemetry",
+  {
+    description: "Capture compact per-object runtime telemetry for transforms, renderer/collider bounds, rigidbodies, velocities, and scene time.",
+    inputSchema: z.object({
+      pathPrefix: z.string().min(1).max(512).optional(),
+      includeInactive: z.boolean().default(false),
+      withinRadius: z.union([
+        z.object({
+          centerPath: z.string().min(1).max(512),
+          radius: z.number().finite().min(0).max(100000)
+        }).strict(),
+        z.object({
+          center: z.object({
+            x: z.number().finite(),
+            y: z.number().finite(),
+            z: z.number().finite()
+          }).strict(),
+          radius: z.number().finite().min(0).max(100000)
+        }).strict()
+      ]).optional(),
+      includeRenderers: z.boolean().default(true),
+      includeColliders: z.boolean().default(true),
+      includeRigidbodies: z.boolean().default(true),
+      maxObjects: z.number().int().min(1).max(500).default(200)
+    }).strict()
+  },
+  async (input) => bridgeTool("unity.runtime.telemetry", input)
+);
+
+server.registerTool(
   "unity.ui.audit",
   {
     description: "Audit active-scene UI for Canvas, CanvasScaler, EventSystem/input modules, contrast, labels, button action markers, and layout quality.",
@@ -626,7 +656,7 @@ server.registerTool(
 server.registerTool(
   "unity.project.settings.inspect",
   {
-    description: "Inspect high-level Unity project and player settings.",
+    description: "Inspect high-level Unity project, player settings, tags, layers, render pipeline, and input-system mode.",
     inputSchema: z.object({})
   },
   async () => bridgeTool("unity.project.settings.inspect")
@@ -635,7 +665,7 @@ server.registerTool(
 server.registerTool(
   "unity.project.settings.update",
   {
-    description: "Update selected Project Settings, Android Player Settings, and Build Settings with a durable checkpoint.",
+    description: "Update selected Project Settings, Android Player Settings, tags, layers, Active Input Handling, and Build Settings with a durable checkpoint.",
     inputSchema: z.object({
       dryRun: z.boolean().default(true),
       confirm: z.boolean().default(false),
@@ -650,6 +680,9 @@ server.registerTool(
       buildAppBundle: z.boolean().optional(),
       developmentBuild: z.boolean().optional(),
       connectProfiler: z.boolean().optional(),
+      addTags: z.array(z.string().min(1).max(64)).max(200).optional(),
+      addLayers: z.array(z.string().min(1).max(32)).max(24).optional(),
+      activeInputHandling: z.enum(["legacy", "old", "input_manager", "new", "input_system", "both"]).optional(),
       scenes: z.array(z.object({
         path: z.string().min(1).max(512),
         enabled: z.boolean().default(true)
@@ -947,7 +980,12 @@ const modelImportSettingsSchema = z.object({
   importAnimation: z.boolean().default(true),
   animationType: z.enum(["none", "legacy", "generic", "human"]).default("generic"),
   isReadable: z.boolean().default(false),
-  meshCompression: z.enum(["off", "low", "medium", "high"]).default("off")
+  meshCompression: z.enum(["off", "low", "medium", "high"]).default("off"),
+  normalizeOnInstantiate: z.boolean().default(false),
+  recenterPivot: z.boolean().default(false),
+  pivotMode: z.enum(["bounds_center", "bounds_base"]).default("bounds_center"),
+  alignToGround: z.boolean().default(false),
+  forwardAxis: z.enum(["keep", "z", "+z", "-z", "negative_z", "x", "+x", "-x", "negative_x"]).default("keep")
 }).strict();
 
 const textureImportSettingsSchema = z.object({
@@ -984,7 +1022,7 @@ server.registerTool(
 server.registerTool(
   "unity.assets.import",
   {
-    description: "Copy or download a model, texture, or audio file, apply importer settings, and optionally instantiate it or save a prefab.",
+    description: "Copy or download a model, texture, or audio file, apply importer settings, and optionally instantiate, normalize model pivots/axes, or save a prefab.",
     inputSchema: z.object({
       dryRun: z.boolean().default(true),
       confirm: z.boolean().default(false),
@@ -1017,7 +1055,7 @@ server.registerTool(
 server.registerTool(
   "unity.assets.import_from_catalog",
   {
-    description: "Resolve a license-allowlisted catalog asset, enforce its declared SHA-256 and size, import it through Unity, and retain provenance in the audit result.",
+    description: "Resolve a license-allowlisted catalog asset, enforce its declared SHA-256 and size, import it through Unity, optionally normalize models, and retain provenance in the audit result.",
     inputSchema: z.object({
       dryRun: z.boolean().default(true),
       confirm: z.boolean().default(false),

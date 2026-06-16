@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -36,6 +38,9 @@ namespace UnityAI.ControlPlane.Editor
         public bool buildAppBundle;
         public bool developmentBuild;
         public bool connectProfiler;
+        public string[] addTags = Array.Empty<string>();
+        public string[] addLayers = Array.Empty<string>();
+        public string activeInputHandling;
         public BuildSceneInput[] scenes = Array.Empty<BuildSceneInput>();
     }
 
@@ -132,6 +137,9 @@ namespace UnityAI.ControlPlane.Editor
             if (HasField(body, "buildAppBundle")) EditorUserBuildSettings.buildAppBundle = input.buildAppBundle;
             if (HasField(body, "developmentBuild")) EditorUserBuildSettings.development = input.developmentBuild;
             if (HasField(body, "connectProfiler")) EditorUserBuildSettings.connectProfiler = input.connectProfiler;
+            if (HasField(body, "addTags")) AddTags(input.addTags);
+            if (HasField(body, "addLayers")) AddLayers(input.addLayers);
+            if (HasField(body, "activeInputHandling")) SetActiveInputHandling(input.activeInputHandling);
             if (HasField(body, "scenes"))
             {
                 EditorBuildSettings.scenes = input.scenes.Select(scene => new EditorBuildSettingsScene(scene.path.Trim().Replace('\\', '/'), scene.enabled)).ToArray();
@@ -148,6 +156,9 @@ namespace UnityAI.ControlPlane.Editor
             if (HasField(body, "androidMinSdk") && input.androidMinSdk < 21) return Error("androidMinSdk must be at least 21.", out error);
             if (HasField(body, "androidTargetSdk") && input.androidTargetSdk < 0) return Error("androidTargetSdk must be zero (automatic) or positive.", out error);
             if (HasField(body, "androidArchitectures") && ParseArchitectures(input.androidArchitectures) == 0) return Error("androidArchitectures must contain ARM64, ARMv7, or X86.", out error);
+            if (HasField(body, "addTags") && !ValidateNames(input.addTags, 64, "tag", out error)) return false;
+            if (HasField(body, "addLayers") && !ValidateNames(input.addLayers, 32, "layer", out error)) return false;
+            if (HasField(body, "activeInputHandling") && ParseInputHandling(input.activeInputHandling) < 0) return Error("activeInputHandling must be legacy, old, input_system, new, or both.", out error);
             if (HasField(body, "scenes") && input.scenes.Any(scene => scene == null || string.IsNullOrWhiteSpace(scene.path) || !scene.path.StartsWith("Assets/", StringComparison.Ordinal) || !scene.path.EndsWith(".unity", StringComparison.OrdinalIgnoreCase) || scene.path.Contains(".."))) return Error("Every build scene must be a safe Assets/*.unity path.", out error);
             error = string.Empty;
             return true;
@@ -166,9 +177,178 @@ namespace UnityAI.ControlPlane.Editor
 
         private static IEnumerable<string> GetChangedFields(string body)
         {
-            foreach (var field in new[] { "companyName", "productName", "applicationIdentifier", "colorSpace", "scriptingBackend", "androidMinSdk", "androidTargetSdk", "androidArchitectures", "buildAppBundle", "developmentBuild", "connectProfiler", "scenes" })
+            foreach (var field in new[] { "companyName", "productName", "applicationIdentifier", "colorSpace", "scriptingBackend", "androidMinSdk", "androidTargetSdk", "androidArchitectures", "buildAppBundle", "developmentBuild", "connectProfiler", "addTags", "addLayers", "activeInputHandling", "scenes" })
             {
                 if (HasField(body, field)) yield return field;
+            }
+        }
+
+        private static void AddTags(string[] tags)
+        {
+            var manager = LoadTagManager();
+            var property = manager.FindProperty("tags");
+            foreach (var tag in NormalizeNames(tags).Distinct(StringComparer.Ordinal))
+            {
+                if (ContainsString(property, tag))
+                {
+                    continue;
+                }
+
+                property.InsertArrayElementAtIndex(property.arraySize);
+                property.GetArrayElementAtIndex(property.arraySize - 1).stringValue = tag;
+            }
+
+            manager.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void AddLayers(string[] layers)
+        {
+            var manager = LoadTagManager();
+            var property = manager.FindProperty("layers");
+            foreach (var layer in NormalizeNames(layers).Distinct(StringComparer.Ordinal))
+            {
+                if (ContainsString(property, layer))
+                {
+                    continue;
+                }
+
+                var slot = -1;
+                for (var index = 8; index < property.arraySize; index++)
+                {
+                    if (string.IsNullOrWhiteSpace(property.GetArrayElementAtIndex(index).stringValue))
+                    {
+                        slot = index;
+                        break;
+                    }
+                }
+
+                if (slot < 0)
+                {
+                    throw new InvalidOperationException("No free user layer slots are available.");
+                }
+
+                property.GetArrayElementAtIndex(slot).stringValue = layer;
+            }
+
+            manager.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static SerializedObject LoadTagManager()
+        {
+            var assets = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/TagManager.asset");
+            if (assets == null || assets.Length == 0)
+            {
+                throw new InvalidOperationException("ProjectSettings/TagManager.asset could not be loaded.");
+            }
+
+            return new SerializedObject(assets[0]);
+        }
+
+        private static bool ContainsString(SerializedProperty property, string value)
+        {
+            for (var index = 0; index < property.arraySize; index++)
+            {
+                if (string.Equals(property.GetArrayElementAtIndex(index).stringValue, value, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static void SetActiveInputHandling(string value)
+        {
+            var code = ParseInputHandling(value);
+            if (code < 0)
+            {
+                throw new InvalidOperationException("Unsupported activeInputHandling value.");
+            }
+
+            var property = typeof(PlayerSettings).GetProperty("activeInputHandling", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+            if (property != null && property.CanWrite && property.PropertyType.IsEnum)
+            {
+                property.SetValue(null, Enum.ToObject(property.PropertyType, code));
+                return;
+            }
+
+            WriteProjectSettingsActiveInputHandler(code);
+        }
+
+        private static void WriteProjectSettingsActiveInputHandler(int code)
+        {
+            var projectRoot = Directory.GetParent(Application.dataPath)?.FullName ?? Application.dataPath;
+            var path = Path.Combine(projectRoot, "ProjectSettings", "ProjectSettings.asset");
+            if (!File.Exists(path))
+            {
+                throw new InvalidOperationException("ProjectSettings.asset could not be found.");
+            }
+
+            var lines = File.ReadAllLines(path);
+            for (var index = 0; index < lines.Length; index++)
+            {
+                var trimmed = lines[index].TrimStart();
+                if (!trimmed.StartsWith("activeInputHandler:", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var indentation = lines[index].Substring(0, lines[index].Length - trimmed.Length);
+                lines[index] = indentation + "activeInputHandler: " + code;
+                File.WriteAllLines(path, lines);
+                return;
+            }
+
+            throw new InvalidOperationException("activeInputHandler was not found in ProjectSettings.asset.");
+        }
+
+        private static int ParseInputHandling(string value)
+        {
+            switch ((value ?? string.Empty).Trim().ToLowerInvariant().Replace("-", "_").Replace(" ", "_"))
+            {
+                case "legacy":
+                case "old":
+                case "input_manager":
+                    return 0;
+                case "new":
+                case "input_system":
+                case "inputsystem":
+                    return 1;
+                case "both":
+                    return 2;
+                default:
+                    return -1;
+            }
+        }
+
+        private static bool ValidateNames(string[] values, int maxLength, string label, out string error)
+        {
+            foreach (var name in NormalizeNames(values))
+            {
+                if (name.Length > maxLength
+                    || name.Contains("/")
+                    || name.Contains("\\")
+                    || name.Contains("..")
+                    || name.Any(char.IsControl))
+                {
+                    error = $"Invalid {label} name '{name}'.";
+                    return false;
+                }
+            }
+
+            error = string.Empty;
+            return true;
+        }
+
+        private static IEnumerable<string> NormalizeNames(string[] values)
+        {
+            foreach (var value in values ?? Array.Empty<string>())
+            {
+                var normalized = (value ?? string.Empty).Trim();
+                if (normalized.Length > 0)
+                {
+                    yield return normalized;
+                }
             }
         }
 

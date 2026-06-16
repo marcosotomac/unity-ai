@@ -74,12 +74,14 @@ export type VerificationSignal =
   | "asset_license_verified"
   | "asset_hash_available"
   | "asset_hash_verified"
+  | "asset_normalized"
   | "script_source_validated"
   | "script_compilation_verified"
   | "gameplay_template_applied"
   | "ui_audit_completed"
   | "ui_screen_composed"
-  | "ui_quality_gate_passed";
+  | "ui_quality_gate_passed"
+  | "runtime_telemetry_captured";
 
 export interface CapabilityManifest {
   readonly name: CapabilityName;
@@ -119,6 +121,7 @@ export interface AuditEvent {
 export type ObservationSource =
   | "project"
   | "scene"
+  | "runtime"
   | "console"
   | "screenshot"
   | "meta_xr"

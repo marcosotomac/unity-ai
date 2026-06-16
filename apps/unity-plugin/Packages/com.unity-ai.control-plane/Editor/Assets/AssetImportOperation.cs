@@ -72,6 +72,11 @@ namespace UnityAI.ControlPlane.Editor
         public string animationType = "generic";
         public bool isReadable;
         public string meshCompression = "off";
+        public bool normalizeOnInstantiate;
+        public bool recenterPivot;
+        public string pivotMode = "bounds_center";
+        public bool alignToGround;
+        public string forwardAxis = "keep";
     }
 
     [Serializable]
@@ -117,6 +122,8 @@ namespace UnityAI.ControlPlane.Editor
         public string checkpointId;
         public string objectPath;
         public string prefabPath;
+        public bool normalized;
+        public string normalization;
         public AssetCatalogProvenanceInput catalogProvenance = new();
         public string message;
         public string verificationStatus;
@@ -138,6 +145,13 @@ namespace UnityAI.ControlPlane.Editor
             ".png", ".jpg", ".jpeg", ".tga", ".tif", ".tiff", ".psd", ".exr", ".hdr",
             ".wav", ".mp3", ".ogg", ".aif", ".aiff"
         };
+
+        private sealed class ModelInstantiationResult
+        {
+            public GameObject gameObject;
+            public bool normalized;
+            public string normalization = string.Empty;
+        }
 
         public static AssetImportResult Execute(string requestBody, string capability = DefaultCapability)
         {
@@ -255,6 +269,8 @@ namespace UnityAI.ControlPlane.Editor
                     var objectPath = string.Empty;
                     var instantiated = false;
                     var prefabCreated = false;
+                    var normalized = false;
+                    var normalization = string.Empty;
                     if (input.instantiate)
                     {
                         if (!(asset is GameObject model))
@@ -262,9 +278,12 @@ namespace UnityAI.ControlPlane.Editor
                             throw new InvalidOperationException("instantiate=true requires a model asset whose main asset is a GameObject.");
                         }
 
-                        var instance = InstantiateModel(model, input);
+                        var instantiation = InstantiateModel(model, input);
+                        var instance = instantiation.gameObject;
                         objectPath = GetGameObjectPath(instance);
                         instantiated = true;
+                        normalized = instantiation.normalized;
+                        normalization = instantiation.normalization;
                         if (!string.IsNullOrEmpty(prefabPath))
                         {
                             EnsureParentDirectory(ResolveAssetPath(prefabPath));
@@ -311,6 +330,11 @@ namespace UnityAI.ControlPlane.Editor
                         signals.Add("prefab_mutation_verified");
                     }
 
+                    if (normalized)
+                    {
+                        signals.Add("asset_normalized");
+                    }
+
                     if (auditPersisted)
                     {
                         signals.Add("operation_audited");
@@ -346,6 +370,8 @@ namespace UnityAI.ControlPlane.Editor
                         checkpointId = checkpoint.checkpointId,
                         objectPath = objectPath,
                         prefabPath = prefabPath,
+                        normalized = normalized,
+                        normalization = normalization,
                         catalogProvenance = input.catalogProvenance ?? new AssetCatalogProvenanceInput(),
                         message = verified ? $"Imported and verified '{destinationPath}'." : $"Imported '{destinationPath}', but verification failed.",
                         verificationStatus = verified ? "passed" : "failed",
@@ -443,30 +469,52 @@ namespace UnityAI.ControlPlane.Editor
             importer.defaultSampleSettings = settings;
         }
 
-        private static GameObject InstantiateModel(GameObject model, AssetImportInput input)
+        private static ModelInstantiationResult InstantiateModel(GameObject model, AssetImportInput input)
         {
-            var instance = PrefabUtility.InstantiatePrefab(model) as GameObject;
-            if (instance == null)
-            {
-                instance = UnityEngine.Object.Instantiate(model);
-            }
-
-            instance.name = string.IsNullOrWhiteSpace(input.objectName)
+            var objectName = string.IsNullOrWhiteSpace(input.objectName)
                 ? Path.GetFileNameWithoutExtension(input.destinationPath)
                 : RequireSafeName(input.objectName);
-            Undo.RegisterCreatedObjectUndo(instance, "Unity AI Import Asset");
             var parent = FindByPath(NormalizeHierarchyPath(input.parentPath));
             if (!string.IsNullOrWhiteSpace(input.parentPath) && parent == null)
             {
                 throw new InvalidOperationException($"Parent GameObject '{input.parentPath}' was not found.");
             }
 
-            instance.transform.SetParent(parent != null ? parent.transform : null, false);
             var transform = input.transform ?? new ImportedAssetTransformInput();
-            instance.transform.localPosition = ToVector3(transform.position, Vector3.zero);
-            instance.transform.localEulerAngles = ToVector3(transform.rotationEuler, Vector3.zero);
-            instance.transform.localScale = ToVector3(transform.scale, Vector3.one);
-            return instance;
+            var modelSettings = input.model ?? new ModelImportSettingsInput();
+            if (!ShouldNormalizeModel(modelSettings))
+            {
+                var instance = InstantiateModelPrefab(model);
+                instance.name = objectName;
+                Undo.RegisterCreatedObjectUndo(instance, "Unity AI Import Asset");
+                instance.transform.SetParent(parent != null ? parent.transform : null, false);
+                ApplyRequestedTransform(instance.transform, transform);
+                return new ModelInstantiationResult { gameObject = instance };
+            }
+
+            var root = new GameObject(objectName);
+            Undo.RegisterCreatedObjectUndo(root, "Unity AI Import Normalized Asset");
+            root.transform.SetParent(parent != null ? parent.transform : null, false);
+            root.transform.localPosition = Vector3.zero;
+            root.transform.localRotation = Quaternion.identity;
+            root.transform.localScale = Vector3.one;
+
+            var child = InstantiateModelPrefab(model);
+            child.name = objectName + "_Model";
+            Undo.RegisterCreatedObjectUndo(child, "Unity AI Import Normalized Asset Model");
+            child.transform.SetParent(root.transform, false);
+            child.transform.localPosition = Vector3.zero;
+            child.transform.localRotation = ParseForwardAxisCorrection(modelSettings.forwardAxis);
+            child.transform.localScale = Vector3.one;
+
+            var normalization = ApplyModelNormalization(root.transform, child.transform, modelSettings);
+            ApplyRequestedTransform(root.transform, transform);
+            return new ModelInstantiationResult
+            {
+                gameObject = root,
+                normalized = true,
+                normalization = normalization
+            };
         }
 
         private static void CopyLocal(string sourcePath, string destinationPath, long maxBytes)
@@ -682,8 +730,230 @@ namespace UnityAI.ControlPlane.Editor
                 return false;
             }
 
+            if (!ValidateModelNormalization(input.model ?? new ModelImportSettingsInput(), input.instantiate, out error))
+            {
+                return false;
+            }
+
             error = string.Empty;
             return true;
+        }
+
+        private static GameObject InstantiateModelPrefab(GameObject model)
+        {
+            var instance = PrefabUtility.InstantiatePrefab(model) as GameObject;
+            return instance != null ? instance : UnityEngine.Object.Instantiate(model);
+        }
+
+        private static void ApplyRequestedTransform(Transform target, ImportedAssetTransformInput transform)
+        {
+            target.localPosition = ToVector3(transform.position, Vector3.zero);
+            target.localEulerAngles = ToVector3(transform.rotationEuler, Vector3.zero);
+            target.localScale = ToVector3(transform.scale, Vector3.one);
+        }
+
+        private static bool ShouldNormalizeModel(ModelImportSettingsInput input)
+        {
+            if (input == null)
+            {
+                return false;
+            }
+
+            var axis = NormalizeAxis(input.forwardAxis);
+            return input.normalizeOnInstantiate
+                || input.recenterPivot
+                || input.alignToGround
+                || axis == "x"
+                || axis == "-x"
+                || axis == "-z";
+        }
+
+        private static string ApplyModelNormalization(Transform root, Transform child, ModelImportSettingsInput input)
+        {
+            var applied = new List<string>();
+            var axis = NormalizeAxis(input.forwardAxis);
+            if (axis == "x" || axis == "-x" || axis == "-z")
+            {
+                applied.Add($"forwardAxis={axis}->+z");
+            }
+
+            var recenterPivot = input.normalizeOnInstantiate || input.recenterPivot;
+            var alignToGround = input.normalizeOnInstantiate || input.alignToGround;
+            var pivotMode = NormalizePivotMode(input.pivotMode);
+            if (recenterPivot)
+            {
+                var bounds = TryGetRootLocalBounds(root, child.gameObject);
+                if (bounds.HasValue)
+                {
+                    var pivot = bounds.Value.center;
+                    if (pivotMode == "bounds_base")
+                    {
+                        pivot.y = bounds.Value.min.y;
+                    }
+
+                    child.localPosition -= pivot;
+                    applied.Add($"pivot={pivotMode}");
+                }
+                else
+                {
+                    applied.Add("pivot=bounds_unavailable");
+                }
+            }
+
+            if (alignToGround)
+            {
+                var bounds = TryGetRootLocalBounds(root, child.gameObject);
+                if (bounds.HasValue)
+                {
+                    child.localPosition += new Vector3(0f, -bounds.Value.min.y, 0f);
+                    applied.Add("ground=aligned");
+                }
+                else
+                {
+                    applied.Add("ground=bounds_unavailable");
+                }
+            }
+
+            if (applied.Count == 0)
+            {
+                applied.Add("normalized_root_created");
+            }
+
+            return string.Join("; ", applied.Distinct());
+        }
+
+        private static Bounds? TryGetRootLocalBounds(Transform root, GameObject target)
+        {
+            var hasBounds = false;
+            var result = new Bounds(Vector3.zero, Vector3.zero);
+            foreach (var renderer in target.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer == null)
+                {
+                    continue;
+                }
+
+                EncapsulateWorldBounds(root, renderer.bounds, ref hasBounds, ref result);
+            }
+
+            foreach (var collider in target.GetComponentsInChildren<Collider>(true))
+            {
+                if (collider == null)
+                {
+                    continue;
+                }
+
+                EncapsulateWorldBounds(root, collider.bounds, ref hasBounds, ref result);
+            }
+
+            return hasBounds ? result : null;
+        }
+
+        private static void EncapsulateWorldBounds(Transform root, Bounds worldBounds, ref bool hasBounds, ref Bounds localBounds)
+        {
+            var min = worldBounds.min;
+            var max = worldBounds.max;
+            var corners = new[]
+            {
+                new Vector3(min.x, min.y, min.z),
+                new Vector3(min.x, min.y, max.z),
+                new Vector3(min.x, max.y, min.z),
+                new Vector3(min.x, max.y, max.z),
+                new Vector3(max.x, min.y, min.z),
+                new Vector3(max.x, min.y, max.z),
+                new Vector3(max.x, max.y, min.z),
+                new Vector3(max.x, max.y, max.z)
+            };
+
+            foreach (var corner in corners)
+            {
+                var local = root.InverseTransformPoint(corner);
+                if (!hasBounds)
+                {
+                    localBounds = new Bounds(local, Vector3.zero);
+                    hasBounds = true;
+                }
+                else
+                {
+                    localBounds.Encapsulate(local);
+                }
+            }
+        }
+
+        private static Quaternion ParseForwardAxisCorrection(string value)
+        {
+            return NormalizeAxis(value) switch
+            {
+                "x" => Quaternion.Euler(0f, -90f, 0f),
+                "-x" => Quaternion.Euler(0f, 90f, 0f),
+                "-z" => Quaternion.Euler(0f, 180f, 0f),
+                _ => Quaternion.identity
+            };
+        }
+
+        private static bool ValidateModelNormalization(ModelImportSettingsInput input, bool instantiate, out string error)
+        {
+            if (!IsSupportedPivotMode(input.pivotMode))
+            {
+                error = "model.pivotMode must be bounds_center or bounds_base.";
+                return false;
+            }
+
+            if (!IsSupportedForwardAxis(input.forwardAxis))
+            {
+                error = "model.forwardAxis must be keep, z, +z, -z, negative_z, x, +x, -x, or negative_x.";
+                return false;
+            }
+
+            if (ShouldNormalizeModel(input) && !instantiate)
+            {
+                error = "Model normalization fields require instantiate=true because Unity mesh pivots are represented by a normalized scene root.";
+                return false;
+            }
+
+            error = string.Empty;
+            return true;
+        }
+
+        private static bool IsSupportedPivotMode(string value)
+        {
+            var normalized = NormalizePivotMode(value);
+            return normalized == "bounds_center" || normalized == "bounds_base";
+        }
+
+        private static string NormalizePivotMode(string value)
+        {
+            var normalized = Normalize(value).Replace("-", "_");
+            return string.IsNullOrEmpty(normalized) ? "bounds_center" : normalized;
+        }
+
+        private static bool IsSupportedForwardAxis(string value)
+        {
+            var normalized = NormalizeAxis(value);
+            return normalized == "keep"
+                || normalized == "z"
+                || normalized == "-z"
+                || normalized == "x"
+                || normalized == "-x";
+        }
+
+        private static string NormalizeAxis(string value)
+        {
+            var normalized = Normalize(value).Replace("_", "").Replace(" ", "");
+            return normalized switch
+            {
+                "" => "keep",
+                "keep" => "keep",
+                "z" => "z",
+                "+z" => "z",
+                "negativez" => "-z",
+                "-z" => "-z",
+                "x" => "x",
+                "+x" => "x",
+                "negativex" => "-x",
+                "-x" => "-x",
+                _ => normalized
+            };
         }
 
         private static bool ValidateCatalogProvenance(AssetCatalogProvenanceInput provenance, out string error)
